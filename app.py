@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import requests
 from flask import Flask, jsonify, request
@@ -18,6 +18,8 @@ from db import (
     create_claim,
     get_member_claims,
     get_all_claims,
+    get_pending_claim_count,
+    get_latest_claim_for_plan,
     set_claim_status,
 )
 
@@ -32,8 +34,11 @@ TORN_API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com")
 TORN_API_TIMEOUT = 20
 
 
-def api_error(message, status=400):
-    return jsonify({"ok": False, "error": message}), status
+def api_error(message, status=400, extra=None):
+    payload = {"ok": False, "error": message}
+    if extra:
+        payload.update(extra)
+    return jsonify(payload), status
 
 
 def normalize_dt(value):
@@ -72,6 +77,12 @@ def normalize_dt(value):
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
 
+    return dt.astimezone(timezone.utc)
+
+
+def iso_z(dt):
+    if not dt:
+        return None
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -80,13 +91,22 @@ def serialize_claim(claim):
         return claim
 
     row = dict(claim)
-    row["created_at"] = normalize_dt(row.get("created_at"))
-    row["reviewed_at"] = normalize_dt(row.get("reviewed_at"))
+    created_dt = normalize_dt(row.get("created_at"))
+    reviewed_dt = normalize_dt(row.get("reviewed_at"))
+    row["created_at"] = iso_z(created_dt)
+    row["reviewed_at"] = iso_z(reviewed_dt)
     return row
 
 
 def serialize_claims(claims):
     return [serialize_claim(c) for c in (claims or [])]
+
+
+def serialize_plan(plan):
+    if not plan:
+        return None
+    row = dict(plan)
+    return row
 
 
 def get_session_member():
@@ -133,6 +153,46 @@ def call_torn_user_profile(api_key: str):
     if isinstance(data, dict) and data.get("error"):
         raise ValueError(data["error"].get("error", "Torn API error"))
     return data
+
+
+def get_plan_rules_state(member_torn_id, plan):
+    latest_claim = get_latest_claim_for_plan(member_torn_id, plan["plan_key"])
+    pending_count = get_pending_claim_count(member_torn_id, plan["plan_key"])
+
+    cooldown_hours = int(plan.get("cooldown_hours", 0) or 0)
+    max_pending_claims = int(plan.get("max_pending_claims", 1) or 1)
+
+    cooldown_until = None
+    cooldown_remaining_hours = 0
+
+    if latest_claim and cooldown_hours > 0:
+        latest_dt = normalize_dt(latest_claim.get("created_at"))
+        if latest_dt:
+            until_dt = latest_dt + timedelta(hours=cooldown_hours)
+            now_dt = datetime.now(timezone.utc)
+            if until_dt > now_dt:
+                cooldown_until = until_dt
+                seconds_left = (until_dt - now_dt).total_seconds()
+                cooldown_remaining_hours = max(1, int((seconds_left + 3599) // 3600))
+
+    rules = {
+        "cooldown_hours": cooldown_hours,
+        "cooldown_until": iso_z(cooldown_until) if cooldown_until else None,
+        "cooldown_remaining_hours": cooldown_remaining_hours,
+        "max_pending_claims": max_pending_claims,
+        "pending_claims": pending_count,
+        "can_submit_claim": True,
+    }
+
+    if pending_count >= max_pending_claims:
+        rules["can_submit_claim"] = False
+        rules["block_reason"] = "You already have the maximum pending claims for this plan."
+
+    if cooldown_until:
+        rules["can_submit_claim"] = False
+        rules["block_reason"] = f"Cooldown active for about {cooldown_remaining_hours} more hour(s)."
+
+    return rules
 
 
 @app.get("/")
@@ -217,7 +277,8 @@ def insurance_auth_logout():
 
 @app.get("/api/insurance/plans")
 def insurance_plans():
-    return jsonify({"ok": True, "plans": get_plans()})
+    plans = [serialize_plan(p) for p in get_plans()]
+    return jsonify({"ok": True, "plans": plans})
 
 
 @app.get("/api/insurance/me")
@@ -230,6 +291,12 @@ def insurance_me():
     enrollment = get_member_enrollment(member["torn_id"], plan_key or None)
     claims = get_member_claims(member["torn_id"], plan_key or None)
 
+    plan_rules = None
+    if plan_key:
+        plan = get_plan(plan_key)
+        if plan:
+            plan_rules = get_plan_rules_state(member["torn_id"], plan)
+
     return jsonify({
         "ok": True,
         "member": {
@@ -240,7 +307,8 @@ def insurance_me():
             "is_admin": bool(member.get("is_admin", 0)),
         },
         "enrollment": enrollment,
-        "claims": serialize_claims(claims)
+        "claims": serialize_claims(claims),
+        "plan_rules": plan_rules,
     })
 
 
@@ -262,7 +330,7 @@ def insurance_enroll():
     return jsonify({
         "ok": True,
         "message": "Enrolled successfully",
-        "plan": plan
+        "plan": serialize_plan(plan)
     })
 
 
@@ -291,6 +359,14 @@ def insurance_claim():
 
     if jump_count < int(plan["min_count"]) or jump_count > int(plan["max_count"]):
         return api_error("Jump count outside plan coverage", 400)
+
+    plan_rules = get_plan_rules_state(member["torn_id"], plan)
+    if not plan_rules["can_submit_claim"]:
+        return api_error(
+            plan_rules.get("block_reason", "Claim blocked by plan rules."),
+            400,
+            {"plan_rules": plan_rules}
+        )
 
     requested_amount = int(plan["payout_amount"])
     claim_id = create_claim(
