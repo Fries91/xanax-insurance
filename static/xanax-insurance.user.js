@@ -18,8 +18,8 @@
 (function () {
     'use strict';
 
-    if (window.__XI_V210__ && document.getElementById('xi-fab')) return;
-    window.__XI_V210__ = true;
+    if (window.__XI_WARBOT_CLONE__ && document.getElementById('xi-fab')) return;
+    window.__XI_WARBOT_CLONE__ = true;
 
     var API_BASE = 'https://xanax-insurance.onrender.com';
     var currentTab = 'xanax_stack';
@@ -118,6 +118,7 @@
     visibility: visible !important;
     pointer-events: auto !important;
 }
+
 #xi-overlay{
     position:fixed!important;
     left:8px!important;
@@ -156,17 +157,23 @@
     gap:10px!important;
 }
 #xi-brand-icon{
-    width:38px!important;
-    height:38px!important;
-    border-radius:12px!important;
+    width:34px!important;
+    height:34px!important;
+    border-radius:10px!important;
     display:flex!important;
     align-items:center!important;
     justify-content:center!important;
+    font-size:18px!important;
+    line-height:1!important;
     background:linear-gradient(180deg,#14323d 0%,#0b1a22 100%)!important;
     border:1px solid rgba(137,228,242,.24)!important;
-    font-size:20px!important;
-    line-height:1!important;
     color:#fff!important;
+    box-shadow:0 6px 14px rgba(0,0,0,.28)!important;
+}
+#xi-brand-icon svg{
+    width:22px!important;
+    height:22px!important;
+    display:block!important;
 }
 #xi-title{
     font-size:16px!important;
@@ -1202,14 +1209,16 @@ ${member ? `
     }
 
     function startRemountWatch() {
-        setInterval(function () {
+        var remountTimer = setInterval(function () {
             try {
                 if (!document.body) return;
                 if (!document.getElementById('xi-fab') || !document.getElementById('xi-overlay')) {
                     ensureMounted();
+                    renderBody();
                 }
             } catch (_err) {}
         }, 2000);
+        return remountTimer;
     }
 
     function boot() {
