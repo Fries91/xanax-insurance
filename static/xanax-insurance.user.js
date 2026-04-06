@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner’s Insurance
 // @namespace    fries91-xanax-insurance
-// @version      2.0.0
+// @version      2.0.1
 // @description  Medical-style faction Xanax insurance overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -87,10 +87,11 @@
         GM_addStyle(`
 #xi-fab{
     position:fixed!important;
-    top:86px!important;
-    right:14px!important;
-    width:42px!important;
-    height:42px!important;
+    right:118px!important;
+    bottom:78px!important;
+    top:auto!important;
+    width:44px!important;
+    height:44px!important;
     border-radius:14px!important;
     display:flex!important;
     align-items:center!important;
@@ -117,8 +118,9 @@
 
 #xi-overlay{
     position:fixed!important;
-    top:136px!important;
-    right:14px!important;
+    right:10px!important;
+    bottom:132px!important;
+    top:auto!important;
     width:400px!important;
     max-width:calc(100vw - 20px)!important;
     max-height:calc(100vh - 154px)!important;
@@ -1179,6 +1181,8 @@ ${member ? `
     function mount() {
         if (!document.body) return false;
         addStyles();
+        var oldHeader = document.getElementById('xi-headerbar');
+        if (oldHeader) oldHeader.remove();
         if (!document.getElementById('xi-fab')) createLauncher();
         if (!document.getElementById('xi-overlay')) createOverlay();
         return true;
