@@ -86,50 +86,44 @@
     function addStyles() {
         GM_addStyle(`
 #xi-headerbar{
-    position:fixed!important;
-    top:52px!important;
-    left:0!important;
-    right:0!important;
-    height:54px!important;
-    z-index:2147483645!important;
-    display:flex!important;
-    align-items:center!important;
-    justify-content:center!important;
-    pointer-events:none!important;
+    position:relative!important;
+    display:block!important;
+    width:100%!important;
+    margin:6px 0 8px 0!important;
+    z-index:20!important;
 }
 #xi-headerbar-inner{
-    width:min(1180px,calc(100vw - 18px))!important;
-    height:44px!important;
+    width:100%!important;
     display:flex!important;
     align-items:center!important;
-    justify-content:center!important;
-    pointer-events:auto!important;
+    justify-content:flex-start!important;
 }
 #xi-headerbar-button{
     appearance:none!important;
-    width:100%!important;
-    height:44px!important;
-    border-radius:14px!important;
-    display:flex!important;
+    width:auto!important;
+    min-height:38px!important;
+    max-width:100%!important;
+    border-radius:12px!important;
+    display:inline-flex!important;
     align-items:center!important;
     justify-content:center!important;
-    gap:10px!important;
-    padding:0 14px!important;
+    gap:8px!important;
+    padding:8px 14px!important;
     background:
         radial-gradient(circle at top right,rgba(72,199,217,.12),transparent 28%),
         linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;
     border:1px solid rgba(72,199,217,.18)!important;
-    box-shadow:0 10px 24px rgba(0,0,0,.28)!important;
+    box-shadow:0 6px 18px rgba(0,0,0,.24)!important;
     box-sizing:border-box!important;
     cursor:pointer!important;
     color:#ecfbff!important;
-    font-size:15px!important;
+    font-size:14px!important;
     font-weight:800!important;
     letter-spacing:.2px!important;
 }
 #xi-headerbar-button .xi-pill-svg{
-    width:20px!important;
-    height:20px!important;
+    width:18px!important;
+    height:18px!important;
     display:block!important;
 }
 #xi-headerbar-button:active{
@@ -140,10 +134,16 @@
     overflow:hidden!important;
     text-overflow:ellipsis!important;
 }
+.xi-header-inline-wrap{
+    width:100%!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:flex-start!important;
+}
 
 #xi-overlay{
     position:fixed!important;
-    top:104px!important;
+    top:72px!important;
     right:18px!important;
     width:400px!important;
     max-width:calc(100vw - 24px)!important;
@@ -1111,11 +1111,55 @@ ${member ? `
         });
     }
 
+    function findLauncherMount() {
+        var selectors = [
+            '#mainContainer .content-title',
+            '#mainContainer .title-black',
+            '#mainContainer .page-head',
+            '#mainContainer .content-wrapper',
+            '#mainContainer',
+            '#body',
+            '#center',
+            '#wrapper'
+        ];
+
+        for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el) return el;
+        }
+        return document.body;
+    }
+
+    function placeLauncher(bar) {
+        var mountPoint = findLauncherMount();
+        if (!mountPoint) return false;
+
+        if (mountPoint.id === 'mainContainer' || mountPoint.id === 'body' || mountPoint.id === 'center' || mountPoint.id === 'wrapper' || /content-wrapper/.test(mountPoint.className || '')) {
+            if (mountPoint.firstChild) mountPoint.insertBefore(bar, mountPoint.firstChild);
+            else mountPoint.appendChild(bar);
+            return true;
+        }
+
+        var parent = mountPoint.parentNode;
+        if (parent) {
+            parent.insertBefore(bar, mountPoint);
+            return true;
+        }
+
+        document.body.appendChild(bar);
+        return true;
+    }
+
     function createLauncher() {
-        if (document.getElementById('xi-headerbar')) return;
+        var existing = document.getElementById('xi-headerbar');
+        if (existing) {
+            if (!existing.querySelector('#xi-headerbar-button')) existing.remove();
+            else return;
+        }
 
         var bar = document.createElement('div');
         bar.id = 'xi-headerbar';
+        bar.className = 'xi-header-inline-wrap';
         bar.innerHTML = `
             <div id="xi-headerbar-inner">
                 <button id="xi-headerbar-button" type="button" title="Open Sinner’s Insurance">
@@ -1125,7 +1169,7 @@ ${member ? `
             </div>
         `;
 
-        document.body.appendChild(bar);
+        placeLauncher(bar);
 
         var button = bar.querySelector('#xi-headerbar-button');
         if (button) button.addEventListener('click', toggleOverlay);
@@ -1215,12 +1259,27 @@ ${member ? `
     }
 
     function boot() {
-        if (mount()) return;
-        var tries = 0;
-        var timer = setInterval(function () {
-            tries += 1;
-            if (mount() || tries > 60) clearInterval(timer);
-        }, 500);
+        if (!mount()) {
+            var tries = 0;
+            var timer = setInterval(function () {
+                tries += 1;
+                if (mount() || tries > 60) clearInterval(timer);
+            }, 500);
+        }
+
+        var remountTimer = null;
+        var observer = new MutationObserver(function () {
+            if (remountTimer) clearTimeout(remountTimer);
+            remountTimer = setTimeout(function () {
+                if (!document.getElementById('xi-headerbar')) createLauncher();
+                if (!document.getElementById('xi-overlay')) createOverlay();
+            }, 150);
+        });
+
+        observer.observe(document.documentElement || document.body, {
+            childList: true,
+            subtree: true
+        });
     }
 
     boot();
