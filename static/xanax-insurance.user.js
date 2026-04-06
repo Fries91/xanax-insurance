@@ -166,9 +166,9 @@
     color:#fff!important;
     left:auto!important;
     right:14px!important;
-    top:calc(50% - 54px)!important;
+    top:120px!important;
     bottom:auto!important;
-    transform:translateY(-50%)!important;
+    transform:none!important;
     opacity:1!important;
     visibility:visible!important;
     pointer-events:auto!important;
@@ -282,7 +282,7 @@
 .xi-pill.warn{background:rgba(197,142,32,.35)!important}
 .xi-pill.neutral{background:rgba(255,255,255,.08)!important}
 @media (max-width:520px){
-    #xi-fab{width:44px!important;height:44px!important;font-size:22px!important;border-radius:12px!important;right:14px!important;top:calc(50% - 62px)!important}
+    #xi-fab{width:44px!important;height:44px!important;font-size:22px!important;border-radius:12px!important;right:14px!important;top:120px!important}
     #xi-overlay{left:6px!important;right:6px!important;top:6px!important;bottom:6px!important;max-width:none!important;border-radius:12px!important}
     #xi-body{padding:10px!important}
 }
@@ -812,7 +812,7 @@
             try {
                 ensureMounted();
             } catch (_e) {}
-        }, 2000);
+        }, 1000);
 
         var observer = new MutationObserver(function () {
             ensureMounted();
@@ -826,11 +826,15 @@
         window.addEventListener('hashchange', ensureMounted);
         window.addEventListener('popstate', ensureMounted);
         document.addEventListener('readystatechange', ensureMounted);
+        document.addEventListener('DOMContentLoaded', ensureMounted);
 
+        ensureMounted();
+        setTimeout(ensureMounted, 0);
+        setTimeout(ensureMounted, 100);
         setTimeout(ensureMounted, 300);
-        setTimeout(ensureMounted, 1200);
-        setTimeout(ensureMounted, 2500);
-        setTimeout(ensureMounted, 5000);
+        setTimeout(ensureMounted, 800);
+        setTimeout(ensureMounted, 1500);
+        setTimeout(ensureMounted, 3000);
     }
 
     boot();
