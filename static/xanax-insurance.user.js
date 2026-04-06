@@ -11,8 +11,8 @@
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @connect      xanax-insurance.onrender.com
-// @updateURL    https://raw.githubusercontent.com/Fries91/xanax-insurance/main/xanax-insurance.user.js
-// @downloadURL  https://raw.githubusercontent.com/Fries91/xanax-insurance/main/xanax-insurance.user.js
+// @updateURL    https://raw.githubusercontent.com/Fries91/xanax-insurance/main/static/xanax-insurance.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fries91/xanax-insurance/main/static/xanax-insurance.user.js
 // ==/UserScript==
 
 (function () {
