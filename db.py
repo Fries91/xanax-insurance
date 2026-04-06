@@ -71,7 +71,24 @@ def init_db():
         requested_amount INTEGER NOT NULL DEFAULT 0,
         reviewed_by INTEGER,
         reviewed_at TEXT,
+        paid_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS insurance_payouts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        claim_id INTEGER NOT NULL,
+        torn_id INTEGER NOT NULL,
+        member_name TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        amount_paid INTEGER NOT NULL DEFAULT 0,
+        paid_by INTEGER NOT NULL,
+        paid_by_name TEXT DEFAULT '',
+        payment_note TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(claim_id)
     )
     """)
 
@@ -310,6 +327,18 @@ def get_all_claims():
     return [dict(r) for r in rows]
 
 
+def get_claim_by_id(claim_id):
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT *
+        FROM insurance_claims
+        WHERE id = ?
+        LIMIT 1
+    """, (claim_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_pending_claim_count(torn_id, plan_key):
     conn = get_conn()
     row = conn.execute("""
@@ -343,6 +372,97 @@ def set_claim_status(claim_id, status, reviewed_by):
     """, (status, reviewed_by, claim_id))
     conn.commit()
     conn.close()
+
+
+def mark_claim_paid(claim_id, paid_by, paid_by_name, payment_note=''):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    claim = cur.execute("""
+        SELECT *
+        FROM insurance_claims
+        WHERE id = ?
+        LIMIT 1
+    """, (claim_id,)).fetchone()
+
+    if not claim:
+        conn.close()
+        return None
+
+    claim = dict(claim)
+
+    existing_payout = cur.execute("""
+        SELECT *
+        FROM insurance_payouts
+        WHERE claim_id = ?
+        LIMIT 1
+    """, (claim_id,)).fetchone()
+
+    if existing_payout:
+        conn.close()
+        return "already_paid"
+
+    cur.execute("""
+        UPDATE insurance_claims
+        SET status = 'paid',
+            reviewed_by = ?,
+            reviewed_at = CURRENT_TIMESTAMP,
+            paid_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (paid_by, claim_id))
+
+    cur.execute("""
+        INSERT INTO insurance_payouts
+        (claim_id, torn_id, member_name, plan_key, amount_paid, paid_by, paid_by_name, payment_note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        claim_id,
+        claim["torn_id"],
+        claim["name"],
+        claim["plan_key"],
+        claim["requested_amount"],
+        paid_by,
+        paid_by_name,
+        payment_note,
+    ))
+
+    payout_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return payout_id
+
+
+def get_payouts_for_member(torn_id, plan_key=None):
+    conn = get_conn()
+
+    if plan_key:
+        rows = conn.execute("""
+            SELECT *
+            FROM insurance_payouts
+            WHERE torn_id = ? AND plan_key = ?
+            ORDER BY datetime(created_at) DESC, id DESC
+        """, (torn_id, plan_key)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT *
+            FROM insurance_payouts
+            WHERE torn_id = ?
+            ORDER BY datetime(created_at) DESC, id DESC
+        """, (torn_id,)).fetchall()
+
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_all_payouts():
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT *
+        FROM insurance_payouts
+        ORDER BY datetime(created_at) DESC, id DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 if __name__ == "__main__":
