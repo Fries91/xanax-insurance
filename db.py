@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path("insurance.db")
+DB_PATH = Path("/var/data/insurance.db")
 
 
 def get_conn():
