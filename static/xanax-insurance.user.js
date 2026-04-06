@@ -18,6 +18,9 @@
 (function () {
     'use strict';
 
+    console.log('SINNER INSURANCE SCRIPT STARTED');
+alert('Sinner insurance script started');
+
     if (window.__XI_WARBOT_CLONE__ && document.getElementById('xi-fab')) return;
     window.__XI_WARBOT_CLONE__ = true;
 
