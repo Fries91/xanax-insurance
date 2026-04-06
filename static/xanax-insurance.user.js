@@ -1093,6 +1093,24 @@ ${member ? `
         });
     }
 
+
+    function pillSvg() {
+        return ''
+            + '<svg class="xi-pill-svg" viewBox="0 0 24 24" aria-hidden="true">'
+            + '<defs>'
+            + '<linearGradient id="xi-pill-grad" x1="0%" y1="0%" x2="100%" y2="100%">'
+            + '<stop offset="0%" stop-color="#ffffff"/>'
+            + '<stop offset="100%" stop-color="#d9f6ff"/>'
+            + '</linearGradient>'
+            + '</defs>'
+            + '<g transform="rotate(-35 12 12)">'
+            + '<rect x="4" y="8" width="16" height="8" rx="4" fill="url(#xi-pill-grad)" opacity="0.96"></rect>'
+            + '<path d="M12 8 L12 16" stroke="#0f2c35" stroke-width="1.2" opacity="0.65"></path>'
+            + '<path d="M6.5 12 H11.8" stroke="#0f2c35" stroke-width="1.2" opacity="0.45"></path>'
+            + '</g>'
+            + '</svg>';
+    }
+
     function createLauncher() {
         var oldHeader = document.getElementById('xi-headerbar');
         if (oldHeader) oldHeader.remove();
