@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Faction Xanax Insurance
 // @namespace    fries91-xanax-insurance
-// @version      1.2.0
+// @version      1.3.0
 // @description  Medical-style faction Xanax insurance overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -9,6 +9,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_deleteValue
 // @connect      xanax-insurance.onrender.com
 // ==/UserScript==
 
@@ -19,16 +20,36 @@
     var currentTab = 'xanax_stack';
     var overlayOpen = false;
     var plansCache = null;
-    var memberData = {
-        torn_id: Number(GM_getValue('xi_torn_id', 0)) || 0,
-        name: String(GM_getValue('xi_name', '') || ''),
-        faction_id: Number(GM_getValue('xi_faction_id', 0)) || 0
+    var meCache = null;
+    var adminClaimsCache = null;
+
+    var auth = {
+        session_token: String(GM_getValue('xi_session_token', '') || ''),
+        api_key: String(GM_getValue('xi_api_key', '') || ''),
+        member: GM_getValue('xi_member', null) || null
     };
 
-    function saveMemberData() {
-        GM_setValue('xi_torn_id', String(memberData.torn_id || 0));
-        GM_setValue('xi_name', String(memberData.name || ''));
-        GM_setValue('xi_faction_id', String(memberData.faction_id || 0));
+    function saveAuth() {
+        GM_setValue('xi_session_token', auth.session_token || '');
+        GM_setValue('xi_api_key', auth.api_key || '');
+        GM_setValue('xi_member', auth.member || null);
+    }
+
+    function clearAuth() {
+        auth.session_token = '';
+        auth.api_key = '';
+        auth.member = null;
+        meCache = null;
+        adminClaimsCache = null;
+        GM_deleteValue('xi_session_token');
+        GM_deleteValue('xi_api_key');
+        GM_deleteValue('xi_member');
+    }
+
+    function headers(extra) {
+        var h = extra ? Object.assign({}, extra) : {};
+        if (auth.session_token) h['X-Session-Token'] = auth.session_token;
+        return h;
     }
 
     function addStyles() {
@@ -50,6 +71,7 @@
 .xi-badge{display:inline-flex!important;align-items:center!important;padding:5px 9px!important;border-radius:999px!important;font-size:11px!important;font-weight:700!important}
 .xi-badge.faction{color:#dffcff!important;background:rgba(72,199,217,.12)!important;border:1px solid rgba(72,199,217,.20)!important}
 .xi-badge.covered{color:#eafff4!important;background:rgba(80,216,144,.12)!important;border:1px solid rgba(80,216,144,.20)!important}
+.xi-badge.admin{color:#fff0f0!important;background:rgba(255,107,107,.12)!important;border:1px solid rgba(255,107,107,.20)!important}
 #xi-tabs{display:grid!important;grid-template-columns:1fr 1fr 1fr!important;gap:8px!important;padding:12px 14px 10px 14px!important;border-bottom:1px solid rgba(72,199,217,.10)!important}
 .xi-tab{border:1px solid rgba(255,255,255,.07)!important;background:rgba(255,255,255,.03)!important;color:#cfe9ee!important;border-radius:12px!important;padding:10px 8px!important;cursor:pointer!important;font-size:12px!important;font-weight:700!important;text-align:center!important}
 .xi-tab.active{color:#f3feff!important;background:linear-gradient(180deg,rgba(72,199,217,.18),rgba(72,199,217,.07))!important;border-color:rgba(72,199,217,.25)!important}
@@ -70,6 +92,7 @@
 .xi-btn{appearance:none!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;padding:10px 12px!important;font-size:12px!important;font-weight:800!important;cursor:pointer!important}
 .xi-btn.primary{color:#ecfeff!important;background:linear-gradient(180deg,#1f94a8 0%,#12697a 100%)!important}
 .xi-btn.success{color:#effff6!important;background:linear-gradient(180deg,#39b47d 0%,#268961 100%)!important}
+.xi-btn.danger{color:#fff4f4!important;background:linear-gradient(180deg,#c95e5e 0%,#a34141 100%)!important}
 .xi-btn.ghost{color:#d7eef3!important;background:rgba(255,255,255,.04)!important}
 .xi-note{margin-top:8px!important;font-size:11px!important;color:#8fb5bd!important;line-height:1.45!important}
 .xi-loading,.xi-error{padding:18px!important;border-radius:14px!important;border:1px solid rgba(255,255,255,.06)!important;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important;font-size:13px!important}
@@ -102,24 +125,25 @@
         return '$' + Number(n || 0).toLocaleString();
     }
 
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function apiGet(path, callback) {
         GM_xmlhttpRequest({
             method: 'GET',
             url: API_BASE + path,
             timeout: 20000,
+            headers: headers(),
             onload: function (res) {
-                try {
-                    callback(null, JSON.parse(res.responseText));
-                } catch (e) {
-                    callback(new Error('Bad JSON'));
-                }
+                try { callback(null, JSON.parse(res.responseText)); }
+                catch (e) { callback(new Error('Bad JSON')); }
             },
-            onerror: function () {
-                callback(new Error('Request failed'));
-            },
-            ontimeout: function () {
-                callback(new Error('Timed out'));
-            }
+            onerror: function () { callback(new Error('Request failed')); },
+            ontimeout: function () { callback(new Error('Timed out')); }
         });
     }
 
@@ -128,64 +152,352 @@
             method: 'POST',
             url: API_BASE + path,
             timeout: 20000,
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: headers({ 'Content-Type': 'application/json' }),
             data: JSON.stringify(payload || {}),
             onload: function (res) {
-                try {
-                    callback(null, JSON.parse(res.responseText));
-                } catch (e) {
-                    callback(new Error('Bad JSON'));
-                }
+                try { callback(null, JSON.parse(res.responseText)); }
+                catch (e) { callback(new Error('Bad JSON')); }
             },
-            onerror: function () {
-                callback(new Error('Request failed'));
-            },
-            ontimeout: function () {
-                callback(new Error('Timed out'));
-            }
+            onerror: function () { callback(new Error('Request failed')); },
+            ontimeout: function () { callback(new Error('Timed out')); }
         });
     }
 
     function ensurePlans(callback) {
-        if (plansCache) {
-            callback(null, plansCache);
-            return;
-        }
+        if (plansCache) return callback(null, plansCache);
         apiGet('/api/insurance/plans', function (err, data) {
             if (err) return callback(err);
-            if (!data || !data.ok || !Array.isArray(data.plans)) {
-                return callback(new Error('Invalid plans response'));
-            }
+            if (!data || !data.ok || !Array.isArray(data.plans)) return callback(new Error('Invalid plans response'));
             plansCache = data.plans;
             callback(null, plansCache);
         });
     }
 
     function getPlan(planKey) {
-        if (!plansCache) return null;
-        return plansCache.find(function (p) { return p.plan_key === planKey; }) || null;
+        return (plansCache || []).find(function (p) { return p.plan_key === planKey; }) || null;
     }
 
-    function ensureMemberBasics() {
-        if (memberData.torn_id && memberData.name && memberData.faction_id) return true;
+    function ensureAuthenticated(done) {
+        if (auth.session_token && auth.member) return done(true);
 
-        var tornId = prompt('Enter your Torn ID');
-        if (!tornId) return false;
+        var key = prompt(
+            'Enter your Torn API key.\n\nStored locally in your browser and sent to this service for faction authentication, insurance access, and claim handling.'
+        );
+        if (!key) return done(false);
 
-        var name = prompt('Enter your Torn name');
-        if (!name) return false;
+        auth.api_key = String(key).trim();
 
-        var factionId = prompt('Enter your faction ID');
-        if (!factionId) return false;
+        apiPost('/api/insurance/auth/verify', { api_key: auth.api_key }, function (err, data) {
+            if (err) {
+                alert('Login failed.');
+                return done(false);
+            }
+            if (!data || !data.ok) {
+                alert((data && data.error) || 'Login failed.');
+                return done(false);
+            }
 
-        memberData.torn_id = Number(tornId) || 0;
-        memberData.name = String(name || '').trim();
-        memberData.faction_id = Number(factionId) || 0;
+            auth.session_token = data.session_token || '';
+            auth.member = data.member || null;
+            saveAuth();
+            done(true);
+        });
+    }
 
-        saveMemberData();
-        return !!(memberData.torn_id && memberData.name && memberData.faction_id);
+    function renderLoginCard() {
+        return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🔐 Faction Login</strong>
+        <span class="xi-mini-badge">Required</span>
+    </div>
+    <div class="xi-note">
+        Uses your Torn API key to verify your player and faction membership. No password is needed.
+    </div>
+    <div class="xi-note">
+        Key use shown before login: faction-only authentication, enrollments, and claims.
+    </div>
+    <div class="xi-actions">
+        <button class="xi-btn primary" id="xi-login-btn" type="button">Login with API Key</button>
+    </div>
+</div>`;
+    }
+
+    function renderMemberCard(me) {
+        var member = (me && me.member) || auth.member || {};
+        var badges = `<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>`;
+        if (member.is_admin) badges += `<span class="xi-badge admin">Admin</span>`;
+
+        var badgesHost = document.getElementById('xi-badges');
+        if (badgesHost) badgesHost.innerHTML = badges;
+
+        return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🪪 Verified Member</strong>
+        <span class="xi-mini-badge">${member.is_admin ? 'Admin' : 'Verified'}</span>
+    </div>
+    <div class="xi-list">
+        <div class="xi-list-row">
+            <div class="xi-list-left">Name</div>
+            <div class="xi-list-right">${escapeHtml(member.name || '')}</div>
+        </div>
+        <div class="xi-list-row">
+            <div class="xi-list-left">Torn ID</div>
+            <div class="xi-list-right">${escapeHtml(member.torn_id || '')}</div>
+        </div>
+        <div class="xi-list-row">
+            <div class="xi-list-left">Position</div>
+            <div class="xi-list-right">${escapeHtml(member.position || 'Member')}</div>
+        </div>
+    </div>
+    <div class="xi-actions" style="margin-top:10px;">
+        <button class="xi-btn ghost" id="xi-logout-btn" type="button">Logout</button>
+    </div>
+</div>`;
+    }
+
+    function renderPlanTab(plan, me) {
+        var enrollment = me && me.enrollment && !Array.isArray(me.enrollment) ? me.enrollment : null;
+        var claims = me && Array.isArray(me.claims) ? me.claims : [];
+        var latestClaim = claims.length ? claims[0] : null;
+
+        return `
+${renderMemberCard(me)}
+
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>💊 Coverage</strong>
+        <span class="xi-mini-badge">${escapeHtml(plan.title)}</span>
+    </div>
+    <div class="xi-grid">
+        <div class="xi-stat">
+            <div class="xi-stat-label">Premium</div>
+            <div class="xi-stat-value">${money(plan.premium_amount)}</div>
+        </div>
+        <div class="xi-stat">
+            <div class="xi-stat-label">Payout</div>
+            <div class="xi-stat-value">${money(plan.payout_amount)}</div>
+        </div>
+    </div>
+    <div class="xi-note">${escapeHtml(plan.description || '')}</div>
+</div>
+
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🩺 My Policy</strong>
+        <span class="xi-mini-badge">${enrollment ? 'Enrolled' : 'Not Enrolled'}</span>
+    </div>
+    <div class="xi-list">
+        <div class="xi-list-row">
+            <div class="xi-list-left">Enrollment</div>
+            <div class="xi-list-right">${enrollment ? escapeHtml(enrollment.status || 'active') : 'none'}</div>
+        </div>
+        <div class="xi-list-row">
+            <div class="xi-list-left">Covered Count</div>
+            <div class="xi-list-right">${plan.min_count === plan.max_count ? plan.max_count : (plan.min_count + ' to ' + plan.max_count)}</div>
+        </div>
+        <div class="xi-list-row">
+            <div class="xi-list-left">Last Claim</div>
+            <div class="xi-list-right">${latestClaim ? escapeHtml(latestClaim.status || 'pending') : 'none yet'}</div>
+        </div>
+    </div>
+</div>
+
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>📋 Actions</strong>
+        <span class="xi-mini-badge">Live</span>
+    </div>
+    <div class="xi-actions">
+        <button class="xi-btn primary" data-action="enroll" data-plan="${plan.plan_key}" type="button">Enroll</button>
+        <button class="xi-btn success" data-action="claim" data-plan="${plan.plan_key}" type="button">File Claim</button>
+        <button class="xi-btn ghost" data-action="refresh" data-plan="${plan.plan_key}" type="button">Refresh</button>
+    </div>
+</div>`;
+    }
+
+    function renderAdminPanel() {
+        if (!auth.member || !auth.member.is_admin) return '';
+        var claims = adminClaimsCache || [];
+
+        var rows = claims.length ? claims.map(function (c) {
+            return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>#${c.id} ${escapeHtml(c.name)} [${escapeHtml(c.plan_key)}]</strong>
+        <span class="xi-mini-badge">${escapeHtml(c.status)}</span>
+    </div>
+    <div class="xi-list">
+        <div class="xi-list-row"><div class="xi-list-left">Requested</div><div class="xi-list-right">${money(c.requested_amount)}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Jump Count</div><div class="xi-list-right">${escapeHtml(c.jump_count)}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Proof</div><div class="xi-list-right">${escapeHtml(c.proof_text || '')}</div></div>
+    </div>
+    <div class="xi-actions" style="margin-top:10px;">
+        <button class="xi-btn success" data-admin-action="approve" data-claim-id="${c.id}" type="button">Approve</button>
+        <button class="xi-btn danger" data-admin-action="deny" data-claim-id="${c.id}" type="button">Deny</button>
+    </div>
+</div>`;
+        }).join('') : `<div class="xi-note">No claims yet.</div>`;
+
+        return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🛡️ Admin Claims Panel</strong>
+        <span class="xi-mini-badge">Admin</span>
+    </div>
+    <div class="xi-actions">
+        <button class="xi-btn ghost" id="xi-refresh-admin" type="button">Refresh Claims</button>
+    </div>
+</div>
+${rows}`;
+    }
+
+    function loadAdminClaims(callback) {
+        if (!auth.member || !auth.member.is_admin) return callback();
+        apiGet('/api/insurance/admin/claims', function (err, data) {
+            if (!err && data && data.ok && Array.isArray(data.claims)) {
+                adminClaimsCache = data.claims;
+            }
+            callback();
+        });
+    }
+
+    function renderBody() {
+        var body = document.getElementById('xi-body');
+        if (!body) return;
+
+        body.innerHTML = '<div class="xi-loading">Loading...</div>';
+
+        ensurePlans(function (err) {
+            if (err) {
+                body.innerHTML = '<div class="xi-error">Could not load plans.</div>';
+                return;
+            }
+
+            if (!auth.session_token || !auth.member) {
+                body.innerHTML = renderLoginCard();
+                bindUi(null, null);
+                return;
+            }
+
+            var plan = getPlan(currentTab);
+            if (!plan) {
+                body.innerHTML = '<div class="xi-error">Plan not found.</div>';
+                return;
+            }
+
+            apiGet('/api/insurance/me?plan_key=' + encodeURIComponent(plan.plan_key), function (meErr, meData) {
+                if (meErr || !meData || !meData.ok) {
+                    clearAuth();
+                    body.innerHTML = renderLoginCard();
+                    bindUi(null, null);
+                    return;
+                }
+
+                meCache = meData;
+                auth.member = meData.member || auth.member;
+                saveAuth();
+
+                loadAdminClaims(function () {
+                    body.innerHTML = renderPlanTab(plan, meData) + renderAdminPanel();
+                    bindUi(plan, meData);
+                });
+            });
+        });
+    }
+
+    function bindUi(plan, meData) {
+        var loginBtn = document.getElementById('xi-login-btn');
+        if (loginBtn) {
+            loginBtn.addEventListener('click', function () {
+                ensureAuthenticated(function (ok) {
+                    if (ok) renderBody();
+                });
+            });
+        }
+
+        var logoutBtn = document.getElementById('xi-logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', function () {
+                apiPost('/api/insurance/auth/logout', {}, function () {
+                    clearAuth();
+                    renderBody();
+                });
+            });
+        }
+
+        var refreshAdmin = document.getElementById('xi-refresh-admin');
+        if (refreshAdmin) {
+            refreshAdmin.addEventListener('click', function () {
+                adminClaimsCache = null;
+                renderBody();
+            });
+        }
+
+        document.querySelectorAll('[data-action]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var action = btn.getAttribute('data-action');
+                var planKey = btn.getAttribute('data-plan');
+
+                if (action === 'refresh') {
+                    renderBody();
+                    return;
+                }
+
+                if (action === 'enroll') {
+                    apiPost('/api/insurance/enroll', { plan_key: planKey }, function (err, data) {
+                        if (err) return alert('Enroll failed.');
+                        if (!data || !data.ok) return alert((data && data.error) || 'Enroll failed.');
+                        alert('Enrolled successfully.');
+                        renderBody();
+                    });
+                    return;
+                }
+
+                if (action === 'claim') {
+                    var jumpCount = plan && plan.plan_key === 'jump_1_4'
+                        ? Number(prompt('Enter jump count between 1 and 4', '1') || 0)
+                        : Number((plan && plan.max_count) || 1);
+
+                    if (!jumpCount) return;
+
+                    var proofText = prompt('Enter proof or short claim note', '');
+                    if (proofText === null) return;
+
+                    apiPost('/api/insurance/claim', {
+                        plan_key: planKey,
+                        jump_count: jumpCount,
+                        proof_text: proofText
+                    }, function (err, data) {
+                        if (err) return alert('Claim failed.');
+                        if (!data || !data.ok) return alert((data && data.error) || 'Claim failed.');
+                        alert('Claim submitted.');
+                        renderBody();
+                    });
+                }
+            });
+        });
+
+        document.querySelectorAll('[data-admin-action]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var action = btn.getAttribute('data-admin-action');
+                var claimId = btn.getAttribute('data-claim-id');
+
+                if (!claimId) return;
+
+                var path = action === 'approve'
+                    ? '/api/insurance/admin/claims/' + claimId + '/approve'
+                    : '/api/insurance/admin/claims/' + claimId + '/deny';
+
+                apiPost(path, {}, function (err, data) {
+                    if (err) return alert('Admin action failed.');
+                    if (!data || !data.ok) return alert((data && data.error) || 'Admin action failed.');
+                    alert(action === 'approve' ? 'Claim approved.' : 'Claim denied.');
+                    renderBody();
+                });
+            });
+        });
     }
 
     function createLauncher() {
@@ -249,214 +561,6 @@
         overlay.querySelectorAll('.xi-tab').forEach(function (btn) {
             btn.classList.toggle('active', btn.getAttribute('data-tab') === currentTab);
         });
-    }
-
-    function renderIdentityCard() {
-        return `
-<div class="xi-card">
-    <div class="xi-card-title">
-        <strong>🪪 Member Identity</strong>
-        <span class="xi-mini-badge">Required</span>
-    </div>
-    <input id="xi-member-torn-id" class="xi-input" type="number" placeholder="Torn ID" value="${memberData.torn_id || ''}">
-    <input id="xi-member-name" class="xi-input" type="text" placeholder="Name" value="${escapeHtml(memberData.name || '')}">
-    <input id="xi-member-faction-id" class="xi-input" type="number" placeholder="Faction ID" value="${memberData.faction_id || ''}">
-    <div class="xi-actions">
-        <button class="xi-btn primary" id="xi-save-identity" type="button">Save Identity</button>
-    </div>
-    <div class="xi-note">
-        This is a temporary setup. Backend trust is still based on values entered here until we add real faction auth.
-    </div>
-</div>`;
-    }
-
-    function renderPlanTab(plan, meData) {
-        var memberRow = meData && meData.member && !Array.isArray(meData.member) ? meData.member : null;
-        var claims = meData && Array.isArray(meData.claims) ? meData.claims : [];
-        var latestClaim = claims.length ? claims[0] : null;
-
-        return `
-${renderIdentityCard()}
-
-<div class="xi-card">
-    <div class="xi-card-title">
-        <strong>💊 Coverage</strong>
-        <span class="xi-mini-badge">${escapeHtml(plan.title)}</span>
-    </div>
-    <div class="xi-grid">
-        <div class="xi-stat">
-            <div class="xi-stat-label">Premium</div>
-            <div class="xi-stat-value">${money(plan.premium_amount)}</div>
-        </div>
-        <div class="xi-stat">
-            <div class="xi-stat-label">Payout</div>
-            <div class="xi-stat-value">${money(plan.payout_amount)}</div>
-        </div>
-    </div>
-    <div class="xi-note">${escapeHtml(plan.description || '')}</div>
-</div>
-
-<div class="xi-card">
-    <div class="xi-card-title">
-        <strong>🩺 My Policy</strong>
-        <span class="xi-mini-badge">${memberRow ? 'Enrolled' : 'Not Enrolled'}</span>
-    </div>
-    <div class="xi-list">
-        <div class="xi-list-row">
-            <div class="xi-list-left">Status</div>
-            <div class="xi-list-right">${memberRow ? escapeHtml(memberRow.status || 'active') : 'inactive'}</div>
-        </div>
-        <div class="xi-list-row">
-            <div class="xi-list-left">Covered Count</div>
-            <div class="xi-list-right">${plan.min_count === plan.max_count ? plan.max_count : (plan.min_count + ' to ' + plan.max_count)}</div>
-        </div>
-        <div class="xi-list-row">
-            <div class="xi-list-left">Last Claim</div>
-            <div class="xi-list-right">${latestClaim ? escapeHtml(latestClaim.status || 'pending') : 'none yet'}</div>
-        </div>
-    </div>
-</div>
-
-<div class="xi-card">
-    <div class="xi-card-title">
-        <strong>📋 Actions</strong>
-        <span class="xi-mini-badge">Live</span>
-    </div>
-    <div class="xi-actions">
-        <button class="xi-btn primary" data-action="enroll" data-plan="${plan.plan_key}" type="button">Enroll</button>
-        <button class="xi-btn success" data-action="claim" data-plan="${plan.plan_key}" type="button">File Claim</button>
-        <button class="xi-btn ghost" data-action="refresh" data-plan="${plan.plan_key}" type="button">Refresh</button>
-    </div>
-    <div class="xi-note">
-        Enroll and claim are now wired to Render.
-    </div>
-</div>`;
-    }
-
-    function renderBody() {
-        var body = document.getElementById('xi-body');
-        if (!body) return;
-
-        body.innerHTML = '<div class="xi-loading">Loading plan and member data...</div>';
-
-        ensurePlans(function (err) {
-            if (err) {
-                body.innerHTML = '<div class="xi-error">Could not load plans.</div>';
-                return;
-            }
-
-            var plan = getPlan(currentTab);
-            if (!plan) {
-                body.innerHTML = '<div class="xi-error">Plan not found.</div>';
-                return;
-            }
-
-            if (!memberData.torn_id) {
-                body.innerHTML = renderPlanTab(plan, { member: null, claims: [] });
-                bindUi(plan);
-                return;
-            }
-
-            apiGet('/api/insurance/me?torn_id=' + encodeURIComponent(memberData.torn_id) + '&plan_key=' + encodeURIComponent(plan.plan_key), function (err2, meData) {
-                if (err2 || !meData || !meData.ok) {
-                    body.innerHTML = renderPlanTab(plan, { member: null, claims: [] });
-                    bindUi(plan);
-                    return;
-                }
-
-                body.innerHTML = renderPlanTab(plan, meData);
-                bindUi(plan);
-            });
-        });
-    }
-
-    function bindUi(plan) {
-        var saveBtn = document.getElementById('xi-save-identity');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', function () {
-                var tornId = Number((document.getElementById('xi-member-torn-id') || {}).value || 0);
-                var name = String((document.getElementById('xi-member-name') || {}).value || '').trim();
-                var factionId = Number((document.getElementById('xi-member-faction-id') || {}).value || 0);
-
-                memberData.torn_id = tornId;
-                memberData.name = name;
-                memberData.faction_id = factionId;
-                saveMemberData();
-                alert('Identity saved.');
-                renderBody();
-            });
-        }
-
-        document.querySelectorAll('[data-action]').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var action = btn.getAttribute('data-action');
-                var planKey = btn.getAttribute('data-plan');
-                if (action === 'refresh') {
-                    renderBody();
-                    return;
-                }
-                if (action === 'enroll') {
-                    submitEnroll(planKey);
-                    return;
-                }
-                if (action === 'claim') {
-                    submitClaim(planKey, plan);
-                }
-            });
-        });
-    }
-
-    function submitEnroll(planKey) {
-        if (!ensureMemberBasics()) return;
-
-        apiPost('/api/insurance/enroll', {
-            torn_id: memberData.torn_id,
-            name: memberData.name,
-            faction_id: memberData.faction_id,
-            plan_key: planKey
-        }, function (err, data) {
-            if (err) return alert('Enroll failed.');
-            if (!data || !data.ok) return alert((data && data.error) || 'Enroll failed.');
-            alert('Enrolled successfully.');
-            renderBody();
-        });
-    }
-
-    function submitClaim(planKey, plan) {
-        if (!ensureMemberBasics()) return;
-
-        var jumpCount = plan.max_count;
-        if (plan.plan_key === 'jump_1_4') {
-            var entered = prompt('Enter jump count between 1 and 4', '1');
-            if (!entered) return;
-            jumpCount = Number(entered) || 1;
-        }
-
-        var proofText = prompt('Enter proof or short claim note', '');
-        if (proofText === null) return;
-
-        apiPost('/api/insurance/claim', {
-            torn_id: memberData.torn_id,
-            name: memberData.name,
-            faction_id: memberData.faction_id,
-            plan_key: planKey,
-            jump_count: jumpCount,
-            proof_text: proofText
-        }, function (err, data) {
-            if (err) return alert('Claim failed.');
-            if (!data || !data.ok) return alert((data && data.error) || 'Claim failed.');
-            alert('Claim submitted.');
-            renderBody();
-        });
-    }
-
-    function escapeHtml(value) {
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
     }
 
     function openOverlay() {
