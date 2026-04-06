@@ -86,41 +86,34 @@
     function addStyles() {
         GM_addStyle(`
 #xi-fab{
-    position:fixed!important;
-    z-index:2147483647!important;
-    width:36px!important;
-    height:36px!important;
-    border-radius:10px!important;
-    display:flex!important;
-    align-items:center!important;
-    justify-content:center!important;
-    font-size:18px!important;
-    line-height:1!important;
-    cursor:pointer!important;
-    user-select:none!important;
-    -webkit-user-select:none!important;
-    -webkit-touch-callout:none!important;
-    -webkit-tap-highlight-color:transparent!important;
-    touch-action:none!important;
-    box-shadow:0 8px 24px rgba(0,0,0,.45)!important;
-    border:1px solid rgba(255,255,255,.10)!important;
-    background:radial-gradient(circle at 30% 20%, rgba(72,199,217,.98), rgba(16,90,110,.98) 55%, rgba(8,38,46,.98))!important;
-    color:#fff!important;
-    left:auto!important;
-    right:14px!important;
-    top:calc(50% - 54px)!important;
-    bottom:auto!important;
-    transform:translateY(-50%)!important;
-    opacity:1!important;
-    visibility:visible!important;
-    pointer-events:auto!important;
-    appearance:none!important;
-    -webkit-appearance:none!important;
-}
-#xi-fab .xi-pill-svg{
-    width:20px!important;
-    height:20px!important;
-    display:block!important;
+    position: fixed !important;
+    z-index: 2147483647 !important;
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: none !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;
+    border: 1px solid rgba(255,255,255,.10) !important;
+    background: radial-gradient(circle at 30% 20%, rgba(72,199,217,.98), rgba(16,90,110,.98) 55%, rgba(8,38,46,.98)) !important;
+    color: #fff !important;
+    left: auto !important;
+    right: 14px !important;
+    top: calc(50% - 54px) !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
 }
 #xi-overlay{
     position:fixed!important;
@@ -1117,12 +1110,11 @@ ${member ? `
 
         if (document.getElementById('xi-fab')) return;
 
-        var fab = document.createElement('button');
+        var fab = document.createElement('div');
         fab.id = 'xi-fab';
-        fab.type = 'button';
-        fab.title = 'Open Sinner’s Insurance';
+        fab.textContent = '💊';
         fab.setAttribute('aria-label', 'Open Sinner’s Insurance');
-        fab.innerHTML = pillSvg();
+        fab.setAttribute('title', 'Sinner’s Insurance');
 
         document.body.appendChild(fab);
         fab.addEventListener('click', toggleOverlay);
@@ -1138,7 +1130,7 @@ ${member ? `
 <div id="xi-header">
     <div id="xi-header-top">
         <div id="xi-brand">
-            <div id="xi-brand-icon">${pillSvg()}</div>
+            <div id="xi-brand-icon">💊</div>
             <div>
                 <div id="xi-title">Sinner’s Insurance</div>
                 <div id="xi-subtitle">Insurance panel for faction members</div>
