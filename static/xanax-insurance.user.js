@@ -85,69 +85,43 @@
 
     function addStyles() {
         GM_addStyle(`
-#xi-headerbar{
-    position:relative!important;
-    display:block!important;
-    width:100%!important;
-    margin:6px 0 8px 0!important;
-    z-index:20!important;
-}
-#xi-headerbar-inner{
-    width:100%!important;
+#xi-fab{
+    position:fixed!important;
+    top:86px!important;
+    right:14px!important;
+    width:42px!important;
+    height:42px!important;
+    border-radius:14px!important;
     display:flex!important;
-    align-items:center!important;
-    justify-content:flex-start!important;
-}
-#xi-headerbar-button{
-    appearance:none!important;
-    width:auto!important;
-    min-height:38px!important;
-    max-width:100%!important;
-    border-radius:12px!important;
-    display:inline-flex!important;
     align-items:center!important;
     justify-content:center!important;
-    gap:8px!important;
-    padding:8px 14px!important;
-    background:
-        radial-gradient(circle at top right,rgba(72,199,217,.12),transparent 28%),
-        linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;
-    border:1px solid rgba(72,199,217,.18)!important;
-    box-shadow:0 6px 18px rgba(0,0,0,.24)!important;
-    box-sizing:border-box!important;
     cursor:pointer!important;
-    color:#ecfbff!important;
-    font-size:14px!important;
-    font-weight:800!important;
-    letter-spacing:.2px!important;
+    z-index:2147483645!important;
+    border:1px solid rgba(120,220,240,.28)!important;
+    background:
+        radial-gradient(circle at 30% 25%,rgba(255,255,255,.18),transparent 35%),
+        linear-gradient(180deg,#102a35 0%,#0a171d 100%)!important;
+    box-shadow:
+        0 8px 18px rgba(0,0,0,.32),
+        0 0 0 1px rgba(72,199,217,.10),
+        0 0 14px rgba(72,199,217,.12)!important;
 }
-#xi-headerbar-button .xi-pill-svg{
-    width:18px!important;
-    height:18px!important;
+#xi-fab .xi-pill-svg{
+    width:24px!important;
+    height:24px!important;
     display:block!important;
 }
-#xi-headerbar-button:active{
-    transform:scale(.99)!important;
-}
-#xi-headerbar-button-label{
-    white-space:nowrap!important;
-    overflow:hidden!important;
-    text-overflow:ellipsis!important;
-}
-.xi-header-inline-wrap{
-    width:100%!important;
-    display:flex!important;
-    align-items:center!important;
-    justify-content:flex-start!important;
+#xi-fab:active{
+    transform:scale(.98)!important;
 }
 
 #xi-overlay{
     position:fixed!important;
-    top:72px!important;
-    right:18px!important;
+    top:136px!important;
+    right:14px!important;
     width:400px!important;
-    max-width:calc(100vw - 24px)!important;
-    max-height:calc(100vh - 122px)!important;
+    max-width:calc(100vw - 20px)!important;
+    max-height:calc(100vh - 154px)!important;
     overflow:hidden!important;
     z-index:2147483646!important;
     border-radius:18px!important;
@@ -524,24 +498,22 @@
 @media (max-width:520px){
     #xi-headerbar{
         top:52px!important;
-        height:56px!important;
+        height:52px!important;
     }
     #xi-headerbar-inner{
-        width:calc(100vw - 10px)!important;
-        height:46px!important;
+        width:calc(100vw - 12px)!important;
+        height:42px!important;
+        padding:0 8px!important;
     }
-    #xi-headerbar-button{
-        height:46px!important;
-        border-radius:12px!important;
-        font-size:14px!important;
-        padding:0 10px!important;
+    #xi-headerbar-right{
+        display:none!important;
     }
     #xi-overlay{
-        top:114px!important;
+        top:110px!important;
         right:8px!important;
         left:8px!important;
         width:auto!important;
-        max-height:calc(100vh - 132px)!important;
+        max-height:calc(100vh - 128px)!important;
     }
     #xi-tabs{
         grid-template-columns:1fr 1fr!important;
@@ -1111,68 +1083,22 @@ ${member ? `
         });
     }
 
-    function findLauncherMount() {
-        var selectors = [
-            '#mainContainer .content-title',
-            '#mainContainer .title-black',
-            '#mainContainer .page-head',
-            '#mainContainer .content-wrapper',
-            '#mainContainer',
-            '#body',
-            '#center',
-            '#wrapper'
-        ];
-
-        for (var i = 0; i < selectors.length; i++) {
-            var el = document.querySelector(selectors[i]);
-            if (el) return el;
-        }
-        return document.body;
-    }
-
-    function placeLauncher(bar) {
-        var mountPoint = findLauncherMount();
-        if (!mountPoint) return false;
-
-        if (mountPoint.id === 'mainContainer' || mountPoint.id === 'body' || mountPoint.id === 'center' || mountPoint.id === 'wrapper' || /content-wrapper/.test(mountPoint.className || '')) {
-            if (mountPoint.firstChild) mountPoint.insertBefore(bar, mountPoint.firstChild);
-            else mountPoint.appendChild(bar);
-            return true;
-        }
-
-        var parent = mountPoint.parentNode;
-        if (parent) {
-            parent.insertBefore(bar, mountPoint);
-            return true;
-        }
-
-        document.body.appendChild(bar);
-        return true;
-    }
-
     function createLauncher() {
-        var existing = document.getElementById('xi-headerbar');
-        if (existing) {
-            if (!existing.querySelector('#xi-headerbar-button')) existing.remove();
-            else return;
-        }
+        var oldHeader = document.getElementById('xi-headerbar');
+        if (oldHeader) oldHeader.remove();
 
-        var bar = document.createElement('div');
-        bar.id = 'xi-headerbar';
-        bar.className = 'xi-header-inline-wrap';
-        bar.innerHTML = `
-            <div id="xi-headerbar-inner">
-                <button id="xi-headerbar-button" type="button" title="Open Sinner’s Insurance">
-                    ${pillSvg()}
-                    <span id="xi-headerbar-button-label">📝 Sinner’s Insurance 💊</span>
-                </button>
-            </div>
-        `;
+        var existing = document.getElementById('xi-fab');
+        if (existing) return;
 
-        placeLauncher(bar);
+        var fab = document.createElement('button');
+        fab.id = 'xi-fab';
+        fab.type = 'button';
+        fab.title = 'Open Sinner’s Insurance';
+        fab.setAttribute('aria-label', 'Open Sinner’s Insurance');
+        fab.innerHTML = pillSvg();
 
-        var button = bar.querySelector('#xi-headerbar-button');
-        if (button) button.addEventListener('click', toggleOverlay);
+        document.body.appendChild(fab);
+        fab.addEventListener('click', toggleOverlay);
     }
 
     function createOverlay() {
@@ -1188,7 +1114,7 @@ ${member ? `
             <div id="xi-brand-icon">${pillSvg()}</div>
             <div>
                 <div id="xi-title">Sinner’s Insurance</div>
-                <div id="xi-subtitle">Medical coverage panel for faction members</div>
+                <div id="xi-subtitle">Insurance panel for faction members</div>
             </div>
         </div>
         <button id="xi-close" type="button">×</button>
@@ -1253,33 +1179,42 @@ ${member ? `
     function mount() {
         if (!document.body) return false;
         addStyles();
-        createLauncher();
-        createOverlay();
+        if (!document.getElementById('xi-fab')) createLauncher();
+        if (!document.getElementById('xi-overlay')) createOverlay();
         return true;
     }
 
     function boot() {
-        if (!mount()) {
-            var tries = 0;
-            var timer = setInterval(function () {
-                tries += 1;
-                if (mount() || tries > 60) clearInterval(timer);
-            }, 500);
-        }
+        mount();
+
+        var tries = 0;
+        var timer = setInterval(function () {
+            tries += 1;
+            mount();
+            if (tries > 60) clearInterval(timer);
+        }, 600);
 
         var remountTimer = null;
         var observer = new MutationObserver(function () {
             if (remountTimer) clearTimeout(remountTimer);
             remountTimer = setTimeout(function () {
-                if (!document.getElementById('xi-headerbar')) createLauncher();
-                if (!document.getElementById('xi-overlay')) createOverlay();
-            }, 150);
+                mount();
+            }, 120);
         });
 
         observer.observe(document.documentElement || document.body, {
             childList: true,
             subtree: true
         });
+
+        window.addEventListener('load', mount);
+        window.addEventListener('hashchange', mount);
+        window.addEventListener('popstate', mount);
+        document.addEventListener('readystatechange', mount);
+
+        setTimeout(mount, 300);
+        setTimeout(mount, 1200);
+        setTimeout(mount, 2500);
     }
 
     boot();
