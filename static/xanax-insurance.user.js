@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Faction Xanax Insurance
+// @name         Sinner’s Insurance
 // @namespace    fries91-xanax-insurance
 // @version      2.0.0
 // @description  Medical-style faction Xanax insurance overlay
@@ -90,7 +90,7 @@
     top:52px!important;
     left:0!important;
     right:0!important;
-    height:46px!important;
+    height:54px!important;
     z-index:2147483645!important;
     display:flex!important;
     align-items:center!important;
@@ -99,82 +99,46 @@
 }
 #xi-headerbar-inner{
     width:min(1180px,calc(100vw - 18px))!important;
-    height:38px!important;
+    height:44px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    pointer-events:auto!important;
+}
+#xi-headerbar-button{
+    appearance:none!important;
+    width:100%!important;
+    height:44px!important;
     border-radius:14px!important;
     display:flex!important;
     align-items:center!important;
-    justify-content:space-between!important;
-    padding:0 10px!important;
-    background:
-        radial-gradient(circle at top right,rgba(72,199,217,.10),transparent 28%),
-        linear-gradient(180deg,rgba(16,32,40,.96) 0%,rgba(8,18,24,.96) 100%)!important;
-    border:1px solid rgba(72,199,217,.16)!important;
-    box-shadow:0 10px 24px rgba(0,0,0,.28)!important;
-    pointer-events:auto!important;
-    box-sizing:border-box!important;
-}
-#xi-headerbar-left{
-    display:flex!important;
-    align-items:center!important;
-    gap:10px!important;
-    min-width:0!important;
-}
-#xi-headerbar-icon{
-    width:34px!important;
-    height:34px!important;
-    border-radius:12px!important;
-    display:flex!important;
-    align-items:center!important;
     justify-content:center!important;
-    cursor:pointer!important;
-    border:1px solid rgba(120,220,240,.28)!important;
+    gap:10px!important;
+    padding:0 14px!important;
     background:
-        radial-gradient(circle at 30% 25%,rgba(255,255,255,.18),transparent 35%),
-        linear-gradient(180deg,#102a35 0%,#0a171d 100%)!important;
-    box-shadow:
-        0 6px 14px rgba(0,0,0,.28),
-        0 0 0 1px rgba(72,199,217,.10),
-        0 0 14px rgba(72,199,217,.12)!important;
+        radial-gradient(circle at top right,rgba(72,199,217,.12),transparent 28%),
+        linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;
+    border:1px solid rgba(72,199,217,.18)!important;
+    box-shadow:0 10px 24px rgba(0,0,0,.28)!important;
+    box-sizing:border-box!important;
+    cursor:pointer!important;
+    color:#ecfbff!important;
+    font-size:15px!important;
+    font-weight:800!important;
+    letter-spacing:.2px!important;
 }
-#xi-headerbar-icon .xi-pill-svg{
-    width:22px!important;
-    height:22px!important;
+#xi-headerbar-button .xi-pill-svg{
+    width:20px!important;
+    height:20px!important;
     display:block!important;
 }
-#xi-headerbar-titlewrap{
-    min-width:0!important;
-    display:flex!important;
-    flex-direction:column!important;
-    justify-content:center!important;
+#xi-headerbar-button:active{
+    transform:scale(.99)!important;
 }
-#xi-headerbar-title{
-    font-size:12px!important;
-    font-weight:800!important;
-    color:#ecfbff!important;
-    line-height:1.1!important;
+#xi-headerbar-button-label{
     white-space:nowrap!important;
-}
-#xi-headerbar-sub{
-    font-size:10px!important;
-    color:#8fb5bd!important;
-    line-height:1.1!important;
-    white-space:nowrap!important;
-}
-#xi-headerbar-right{
-    display:flex!important;
-    align-items:center!important;
-    gap:8px!important;
-}
-.xi-header-chip{
-    display:inline-flex!important;
-    align-items:center!important;
-    padding:5px 9px!important;
-    border-radius:999px!important;
-    font-size:10px!important;
-    font-weight:700!important;
-    color:#dffcff!important;
-    background:rgba(72,199,217,.10)!important;
-    border:1px solid rgba(72,199,217,.16)!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
 }
 
 #xi-overlay{
@@ -560,22 +524,24 @@
 @media (max-width:520px){
     #xi-headerbar{
         top:52px!important;
-        height:52px!important;
+        height:56px!important;
     }
     #xi-headerbar-inner{
-        width:calc(100vw - 12px)!important;
-        height:42px!important;
-        padding:0 8px!important;
+        width:calc(100vw - 10px)!important;
+        height:46px!important;
     }
-    #xi-headerbar-right{
-        display:none!important;
+    #xi-headerbar-button{
+        height:46px!important;
+        border-radius:12px!important;
+        font-size:14px!important;
+        padding:0 10px!important;
     }
     #xi-overlay{
-        top:110px!important;
+        top:114px!important;
         right:8px!important;
         left:8px!important;
         width:auto!important;
-        max-height:calc(100vh - 128px)!important;
+        max-height:calc(100vh - 132px)!important;
     }
     #xi-tabs{
         grid-template-columns:1fr 1fr!important;
@@ -1152,26 +1118,17 @@ ${member ? `
         bar.id = 'xi-headerbar';
         bar.innerHTML = `
             <div id="xi-headerbar-inner">
-                <div id="xi-headerbar-left">
-                    <div id="xi-headerbar-icon" title="Faction Xanax Insurance">
-                        ${pillSvg()}
-                    </div>
-                    <div id="xi-headerbar-titlewrap">
-                        <div id="xi-headerbar-title">Faction Xanax Insurance</div>
-                        <div id="xi-headerbar-sub">Medical cover for faction members</div>
-                    </div>
-                </div>
-                <div id="xi-headerbar-right">
-                    <span class="xi-header-chip">Faction Only</span>
-                    <span class="xi-header-chip">Overlay</span>
-                </div>
+                <button id="xi-headerbar-button" type="button" title="Open Sinner’s Insurance">
+                    ${pillSvg()}
+                    <span id="xi-headerbar-button-label">📝 Sinner’s Insurance 💊</span>
+                </button>
             </div>
         `;
 
         document.body.appendChild(bar);
 
-        var icon = bar.querySelector('#xi-headerbar-icon');
-        if (icon) icon.addEventListener('click', toggleOverlay);
+        var button = bar.querySelector('#xi-headerbar-button');
+        if (button) button.addEventListener('click', toggleOverlay);
     }
 
     function createOverlay() {
@@ -1186,7 +1143,7 @@ ${member ? `
         <div id="xi-brand">
             <div id="xi-brand-icon">${pillSvg()}</div>
             <div>
-                <div id="xi-title">Faction Xanax Insurance</div>
+                <div id="xi-title">Sinner’s Insurance</div>
                 <div id="xi-subtitle">Medical coverage panel for faction members</div>
             </div>
         </div>
