@@ -13,6 +13,7 @@
 // @connect      xanax-insurance.onrender.com
 // @updateURL    https://raw.githubusercontent.com/Fries91/xanax-insurance/main/static/xanax-insurance.user.js
 // @downloadURL  https://raw.githubusercontent.com/Fries91/xanax-insurance/main/static/xanax-insurance.user.js
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
@@ -164,9 +165,9 @@
     border:1px solid rgba(255,255,255,.10)!important;
     background:radial-gradient(circle at 30% 20%, rgba(72,199,217,.98), rgba(16,90,110,.98) 55%, rgba(8,38,46,.98))!important;
     color:#fff!important;
-    left:auto!important;
-    right:14px!important;
-    top:120px!important;
+    left:0!important;
+    top:0!important;
+    right:auto!important;
     bottom:auto!important;
     transform:none!important;
     opacity:1!important;
@@ -282,11 +283,25 @@
 .xi-pill.warn{background:rgba(197,142,32,.35)!important}
 .xi-pill.neutral{background:rgba(255,255,255,.08)!important}
 @media (max-width:520px){
-    #xi-fab{width:44px!important;height:44px!important;font-size:22px!important;border-radius:12px!important;right:14px!important;top:120px!important}
+    #xi-fab{width:44px!important;height:44px!important;font-size:22px!important;border-radius:12px!important}
     #xi-overlay{left:6px!important;right:6px!important;top:6px!important;bottom:6px!important;max-width:none!important;border-radius:12px!important}
     #xi-body{padding:10px!important}
 }
         `);
+    }
+
+    function applyFabPos() {
+        var fab = document.getElementById('xi-fab');
+        if (!fab) return;
+        var vpW = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0, 320);
+        var vpH = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0, 320);
+        var left = Math.max(8, vpW - 50);
+        var top = Math.max(24, Math.round(vpH * 0.45) - 54);
+        fab.style.left = left + 'px';
+        fab.style.top = top + 'px';
+        fab.style.right = 'auto';
+        fab.style.bottom = 'auto';
+        fab.style.transform = 'none';
     }
 
     function getPlan(planKey) {
@@ -729,13 +744,17 @@
 
     function createLauncher() {
         var existing = document.getElementById('xi-fab');
-        if (existing) return existing;
+        if (existing) {
+            applyFabPos();
+            return existing;
+        }
         var fab = document.createElement('div');
         fab.id = 'xi-fab';
         fab.textContent = '💊';
         fab.setAttribute('title', 'Sinner’s Insurance');
         fab.setAttribute('aria-label', 'Sinner’s Insurance');
         document.body.appendChild(fab);
+        applyFabPos();
         fab.addEventListener('click', toggleOverlay);
         return fab;
     }
@@ -788,6 +807,7 @@
         addStyles();
         if (!document.getElementById('xi-fab')) createLauncher();
         if (!document.getElementById('xi-overlay')) createOverlay();
+        applyFabPos();
         if (state.overlayOpen) {
             var overlay = document.getElementById('xi-overlay');
             if (overlay) overlay.classList.add('open');
@@ -800,10 +820,11 @@
         var hasFab = !!document.getElementById('xi-fab');
         var hasOverlay = !!document.getElementById('xi-overlay');
         if (!hasFab || !hasOverlay) mount();
+        applyFabPos();
     }
 
     function boot() {
-        mount();
+        ensureMounted();
         ensurePlans(function (_err) {
             renderBody();
         });
@@ -812,7 +833,7 @@
             try {
                 ensureMounted();
             } catch (_e) {}
-        }, 1000);
+        }, 2000);
 
         var observer = new MutationObserver(function () {
             ensureMounted();
@@ -825,16 +846,14 @@
         window.addEventListener('load', ensureMounted);
         window.addEventListener('hashchange', ensureMounted);
         window.addEventListener('popstate', ensureMounted);
+        window.addEventListener('resize', ensureMounted);
         document.addEventListener('readystatechange', ensureMounted);
-        document.addEventListener('DOMContentLoaded', ensureMounted);
 
-        ensureMounted();
         setTimeout(ensureMounted, 0);
-        setTimeout(ensureMounted, 100);
         setTimeout(ensureMounted, 300);
-        setTimeout(ensureMounted, 800);
-        setTimeout(ensureMounted, 1500);
-        setTimeout(ensureMounted, 3000);
+        setTimeout(ensureMounted, 1200);
+        setTimeout(ensureMounted, 2500);
+        setTimeout(ensureMounted, 5000);
     }
 
     boot();
