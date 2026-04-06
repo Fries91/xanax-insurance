@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Faction Xanax Insurance
 // @namespace    fries91-xanax-insurance
-// @version      1.3.0
+// @version      1.7.0
 // @description  Medical-style faction Xanax insurance overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -22,6 +22,13 @@
     var plansCache = null;
     var meCache = null;
     var adminClaimsCache = null;
+    var noticeState = { type: '', text: '' };
+
+    var claimDrafts = {
+        xanax_stack: { jump_count: 4, proof_text: '' },
+        jump_1_4: { jump_count: 1, proof_text: '' },
+        xanax_only: { jump_count: 1, proof_text: '' }
+    };
 
     var auth = {
         session_token: String(GM_getValue('xi_session_token', '') || ''),
@@ -52,12 +59,40 @@
         return h;
     }
 
+    function setNotice(type, text) {
+        noticeState.type = type || '';
+        noticeState.text = text || '';
+        renderNotice();
+    }
+
+    function clearNotice() {
+        noticeState.type = '';
+        noticeState.text = '';
+        renderNotice();
+    }
+
+    function renderNotice() {
+        var host = document.getElementById('xi-notice-host');
+        if (!host) return;
+
+        if (!noticeState.text) {
+            host.innerHTML = '';
+            return;
+        }
+
+        var cls = 'xi-loading';
+        if (noticeState.type === 'error') cls = 'xi-error';
+        if (noticeState.type === 'success') cls = 'xi-success';
+
+        host.innerHTML = '<div class="' + cls + '">' + escapeHtml(noticeState.text) + '</div>';
+    }
+
     function addStyles() {
         GM_addStyle(`
 #xi-pill-launcher{position:fixed!important;top:52%!important;right:14px!important;transform:translateY(-50%)!important;width:52px!important;height:52px!important;border-radius:16px!important;z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;cursor:pointer!important;border:1px solid rgba(120,220,240,.35)!important;background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.22),transparent 35%),linear-gradient(180deg,#102a35 0%,#0a171d 100%)!important;box-shadow:0 8px 24px rgba(0,0,0,.45),0 0 0 1px rgba(72,199,217,.12),0 0 18px rgba(72,199,217,.16)!important}
 #xi-pill-launcher .xi-pill-svg{width:30px!important;height:30px!important;display:block!important}
 #xi-pill-launcher .xi-plus-badge{position:absolute!important;right:-4px!important;bottom:-4px!important;width:19px!important;height:19px!important;border-radius:999px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:12px!important;font-weight:900!important;color:#eaffff!important;background:linear-gradient(180deg,#57d6a6 0%,#299b74 100%)!important;border:2px solid #091116!important}
-#xi-overlay{position:fixed!important;top:70px!important;right:78px!important;width:385px!important;max-width:calc(100vw - 24px)!important;max-height:calc(100vh - 90px)!important;overflow:hidden!important;z-index:2147483646!important;border-radius:18px!important;background:radial-gradient(circle at top right,rgba(72,199,217,.10),transparent 28%),linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;border:1px solid rgba(72,199,217,.22)!important;box-shadow:0 20px 40px rgba(0,0,0,.45)!important;color:#e9f7fb!important;font-family:Arial,Helvetica,sans-serif!important}
+#xi-overlay{position:fixed!important;top:70px!important;right:78px!important;width:395px!important;max-width:calc(100vw - 24px)!important;max-height:calc(100vh - 90px)!important;overflow:hidden!important;z-index:2147483646!important;border-radius:18px!important;background:radial-gradient(circle at top right,rgba(72,199,217,.10),transparent 28%),linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;border:1px solid rgba(72,199,217,.22)!important;box-shadow:0 20px 40px rgba(0,0,0,.45)!important;color:#e9f7fb!important;font-family:Arial,Helvetica,sans-serif!important}
 #xi-overlay.hidden{display:none!important}
 #xi-header{padding:14px 14px 12px 14px!important;border-bottom:1px solid rgba(72,199,217,.14)!important}
 #xi-header-top{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important}
@@ -72,10 +107,11 @@
 .xi-badge.faction{color:#dffcff!important;background:rgba(72,199,217,.12)!important;border:1px solid rgba(72,199,217,.20)!important}
 .xi-badge.covered{color:#eafff4!important;background:rgba(80,216,144,.12)!important;border:1px solid rgba(80,216,144,.20)!important}
 .xi-badge.admin{color:#fff0f0!important;background:rgba(255,107,107,.12)!important;border:1px solid rgba(255,107,107,.20)!important}
-#xi-tabs{display:grid!important;grid-template-columns:1fr 1fr 1fr!important;gap:8px!important;padding:12px 14px 10px 14px!important;border-bottom:1px solid rgba(72,199,217,.10)!important}
+#xi-tabs{display:grid!important;grid-template-columns:1fr 1fr 1fr 1fr!important;gap:8px!important;padding:12px 14px 10px 14px!important;border-bottom:1px solid rgba(72,199,217,.10)!important}
 .xi-tab{border:1px solid rgba(255,255,255,.07)!important;background:rgba(255,255,255,.03)!important;color:#cfe9ee!important;border-radius:12px!important;padding:10px 8px!important;cursor:pointer!important;font-size:12px!important;font-weight:700!important;text-align:center!important}
 .xi-tab.active{color:#f3feff!important;background:linear-gradient(180deg,rgba(72,199,217,.18),rgba(72,199,217,.07))!important;border-color:rgba(72,199,217,.25)!important}
 #xi-body{max-height:calc(100vh - 220px)!important;overflow-y:auto!important;padding:14px!important}
+#xi-notice-host{margin-bottom:12px!important}
 .xi-card{margin-bottom:12px!important;border-radius:14px!important;border:1px solid rgba(255,255,255,.06)!important;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important;padding:12px!important}
 .xi-card-title{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin-bottom:10px!important}
 .xi-card-title strong{font-size:13px!important;color:#ecfbff!important}
@@ -95,11 +131,27 @@
 .xi-btn.danger{color:#fff4f4!important;background:linear-gradient(180deg,#c95e5e 0%,#a34141 100%)!important}
 .xi-btn.ghost{color:#d7eef3!important;background:rgba(255,255,255,.04)!important}
 .xi-note{margin-top:8px!important;font-size:11px!important;color:#8fb5bd!important;line-height:1.45!important}
-.xi-loading,.xi-error{padding:18px!important;border-radius:14px!important;border:1px solid rgba(255,255,255,.06)!important;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important;font-size:13px!important}
+.xi-loading,.xi-error,.xi-success{padding:12px 14px!important;border-radius:12px!important;border:1px solid rgba(255,255,255,.06)!important;font-size:12px!important}
 .xi-error{color:#ffd3d3!important;border-color:rgba(255,107,107,.18)!important;background:linear-gradient(180deg,rgba(255,107,107,.06),rgba(255,107,107,.03))!important}
+.xi-success{color:#eafff4!important;border-color:rgba(80,216,144,.18)!important;background:linear-gradient(180deg,rgba(80,216,144,.06),rgba(80,216,144,.03))!important}
+.xi-loading{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important}
 .xi-input{width:100%!important;box-sizing:border-box!important;margin:0 0 8px 0!important;padding:10px 12px!important;border-radius:10px!important;border:1px solid rgba(255,255,255,.08)!important;background:rgba(0,0,0,.16)!important;color:#ecfbff!important;font-size:12px!important}
-.xi-textarea{width:100%!important;min-height:80px!important;resize:vertical!important;box-sizing:border-box!important;margin:0 0 8px 0!important;padding:10px 12px!important;border-radius:10px!important;border:1px solid rgba(255,255,255,.08)!important;background:rgba(0,0,0,.16)!important;color:#ecfbff!important;font-size:12px!important}
-@media (max-width:520px){#xi-overlay{top:60px!important;right:8px!important;left:8px!important;width:auto!important;max-height:calc(100vh - 72px)!important}#xi-tabs{grid-template-columns:1fr!important}.xi-grid{grid-template-columns:1fr!important}}
+.xi-textarea{width:100%!important;min-height:88px!important;resize:vertical!important;box-sizing:border-box!important;margin:0 0 8px 0!important;padding:10px 12px!important;border-radius:10px!important;border:1px solid rgba(255,255,255,.08)!important;background:rgba(0,0,0,.16)!important;color:#ecfbff!important;font-size:12px!important}
+.xi-help-list{display:grid!important;gap:8px!important}
+.xi-help-item{padding:9px 10px!important;border-radius:10px!important;background:rgba(0,0,0,.12)!important;border:1px solid rgba(255,255,255,.04)!important;font-size:12px!important;color:#d8eff4!important;line-height:1.45!important}
+.xi-label{display:block!important;font-size:11px!important;color:#9fc0c7!important;margin:0 0 6px 0!important}
+.xi-history-empty{font-size:12px!important;color:#8fb5bd!important;padding:8px 2px!important}
+.xi-history-item{padding:10px!important;border-radius:12px!important;background:rgba(0,0,0,.12)!important;border:1px solid rgba(255,255,255,.04)!important;margin-bottom:8px!important}
+.xi-history-top{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;margin-bottom:8px!important}
+.xi-history-title{font-size:12px!important;font-weight:800!important;color:#eafcff!important}
+.xi-history-status{font-size:10px!important;font-weight:800!important;padding:4px 8px!important;border-radius:999px!important}
+.xi-history-status.pending{color:#fff5d8!important;background:rgba(242,193,78,.14)!important;border:1px solid rgba(242,193,78,.20)!important}
+.xi-history-status.approved{color:#eafff4!important;background:rgba(80,216,144,.14)!important;border:1px solid rgba(80,216,144,.20)!important}
+.xi-history-status.denied{color:#ffe6e6!important;background:rgba(255,107,107,.14)!important;border:1px solid rgba(255,107,107,.20)!important}
+.xi-history-status.paid{color:#e8fff9!important;background:rgba(72,199,217,.14)!important;border:1px solid rgba(72,199,217,.20)!important}
+.xi-history-meta{display:grid!important;gap:6px!important}
+.xi-history-meta-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;font-size:11px!important;color:#b7d4da!important}
+@media (max-width:520px){#xi-overlay{top:60px!important;right:8px!important;left:8px!important;width:auto!important;max-height:calc(100vh - 72px)!important}#xi-tabs{grid-template-columns:1fr 1fr!important}.xi-grid{grid-template-columns:1fr!important}}
         `);
     }
 
@@ -119,17 +171,6 @@
         <line x1="32" y1="20" x2="32" y2="44" stroke="#0b3038" stroke-width="2.6" opacity="0.35"></line>
     </g>
 </svg>`;
-    }
-
-    function money(n) {
-        return '$' + Number(n || 0).toLocaleString();
-    }
-
-    function escapeHtml(value) {
-        return String(value || '')
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
     }
 
     function apiGet(path, callback) {
@@ -177,57 +218,49 @@
         return (plansCache || []).find(function (p) { return p.plan_key === planKey; }) || null;
     }
 
-    function ensureAuthenticated(done) {
-        if (auth.session_token && auth.member) return done(true);
+    function loadAdminClaims(callback) {
+        if (!auth.member || !auth.member.is_admin) return callback();
+        apiGet('/api/insurance/admin/claims', function (err, data) {
+            if (!err && data && data.ok && Array.isArray(data.claims)) {
+                adminClaimsCache = data.claims;
+            }
+            callback();
+        });
+    }
 
-        var key = prompt(
-            'Enter your Torn API key.\n\nStored locally in your browser and sent to this service for faction authentication, insurance access, and claim handling.'
-        );
-        if (!key) return done(false);
+    function verifyLoginFromSettings() {
+        var input = document.getElementById('xi-api-key-input');
+        var key = input ? String(input.value || '').trim() : '';
+        if (!key) {
+            setNotice('error', 'Please enter your API key.');
+            return;
+        }
 
-        auth.api_key = String(key).trim();
+        auth.api_key = key;
+        setNotice('loading', 'Verifying faction access...');
 
         apiPost('/api/insurance/auth/verify', { api_key: auth.api_key }, function (err, data) {
             if (err) {
-                alert('Login failed.');
-                return done(false);
+                setNotice('error', 'Login failed.');
+                return;
             }
             if (!data || !data.ok) {
-                alert((data && data.error) || 'Login failed.');
-                return done(false);
+                setNotice('error', (data && data.error) || 'Login failed.');
+                return;
             }
 
             auth.session_token = data.session_token || '';
             auth.member = data.member || null;
             saveAuth();
-            done(true);
+            setNotice('success', 'Login successful.');
+            renderBody();
         });
-    }
-
-    function renderLoginCard() {
-        return `
-<div class="xi-card">
-    <div class="xi-card-title">
-        <strong>🔐 Faction Login</strong>
-        <span class="xi-mini-badge">Required</span>
-    </div>
-    <div class="xi-note">
-        Uses your Torn API key to verify your player and faction membership. No password is needed.
-    </div>
-    <div class="xi-note">
-        Key use shown before login: faction-only authentication, enrollments, and claims.
-    </div>
-    <div class="xi-actions">
-        <button class="xi-btn primary" id="xi-login-btn" type="button">Login with API Key</button>
-    </div>
-</div>`;
     }
 
     function renderMemberCard(me) {
         var member = (me && me.member) || auth.member || {};
         var badges = `<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>`;
         if (member.is_admin) badges += `<span class="xi-badge admin">Admin</span>`;
-
         var badgesHost = document.getElementById('xi-badges');
         if (badgesHost) badgesHost.innerHTML = badges;
 
@@ -238,22 +271,102 @@
         <span class="xi-mini-badge">${member.is_admin ? 'Admin' : 'Verified'}</span>
     </div>
     <div class="xi-list">
+        <div class="xi-list-row"><div class="xi-list-left">Name</div><div class="xi-list-right">${escapeHtml(member.name || '')}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Torn ID</div><div class="xi-list-right">${escapeHtml(member.torn_id || '')}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Position</div><div class="xi-list-right">${escapeHtml(member.position || 'Member')}</div></div>
+    </div>
+</div>`;
+    }
+
+    function renderClaimForm(plan) {
+        var draft = claimDrafts[plan.plan_key] || { jump_count: plan.max_count || 1, proof_text: '' };
+        var showJumpInput = plan.plan_key === 'jump_1_4';
+
+        return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🧾 Claim Form</strong>
+        <span class="xi-mini-badge">In Overlay</span>
+    </div>
+
+    ${showJumpInput ? `
+    <label class="xi-label" for="xi-claim-jump-count">Jump Count</label>
+    <input id="xi-claim-jump-count" class="xi-input" type="number" min="${plan.min_count}" max="${plan.max_count}" value="${escapeHtml(draft.jump_count)}">
+    ` : `
+    <div class="xi-list">
         <div class="xi-list-row">
-            <div class="xi-list-left">Name</div>
-            <div class="xi-list-right">${escapeHtml(member.name || '')}</div>
-        </div>
-        <div class="xi-list-row">
-            <div class="xi-list-left">Torn ID</div>
-            <div class="xi-list-right">${escapeHtml(member.torn_id || '')}</div>
-        </div>
-        <div class="xi-list-row">
-            <div class="xi-list-left">Position</div>
-            <div class="xi-list-right">${escapeHtml(member.position || 'Member')}</div>
+            <div class="xi-list-left">Claim Count</div>
+            <div class="xi-list-right">${plan.max_count}</div>
         </div>
     </div>
-    <div class="xi-actions" style="margin-top:10px;">
-        <button class="xi-btn ghost" id="xi-logout-btn" type="button">Logout</button>
+    `}
+
+    <label class="xi-label" for="xi-claim-proof-text">Proof / Claim Note</label>
+    <textarea id="xi-claim-proof-text" class="xi-textarea" placeholder="Add claim details, note, or proof text here...">${escapeHtml(draft.proof_text || '')}</textarea>
+
+    <div class="xi-actions">
+        <button class="xi-btn success" data-action="submit_claim_form" data-plan="${plan.plan_key}" type="button">Submit Claim</button>
+        <button class="xi-btn ghost" data-action="save_claim_draft" data-plan="${plan.plan_key}" type="button">Save Draft</button>
     </div>
+
+    <div class="xi-note">
+        This keeps claim submission inside the overlay with no browser popups.
+    </div>
+</div>`;
+    }
+
+    function formatDateMaybe(value) {
+        if (!value) return '—';
+        try {
+            var dt = new Date(value);
+            if (!isNaN(dt.getTime())) return dt.toLocaleString();
+        } catch (e) {}
+        return String(value);
+    }
+
+    function renderClaimsHistory(claims) {
+        var list = Array.isArray(claims) ? claims.slice(0, 5) : [];
+
+        if (!list.length) {
+            return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>📚 Claims History</strong>
+        <span class="xi-mini-badge">Recent</span>
+    </div>
+    <div class="xi-history-empty">No claims submitted for this plan yet.</div>
+</div>`;
+        }
+
+        var items = list.map(function (claim) {
+            var status = String(claim.status || 'pending').toLowerCase();
+            var amount = claim.requested_amount != null ? money(claim.requested_amount) : '—';
+            var count = claim.jump_count != null ? String(claim.jump_count) : '—';
+            var proof = claim.proof_text ? escapeHtml(claim.proof_text) : 'No proof note';
+            var created = formatDateMaybe(claim.created_at);
+
+            return `
+<div class="xi-history-item">
+    <div class="xi-history-top">
+        <div class="xi-history-title">Claim #${escapeHtml(claim.id || '')}</div>
+        <div class="xi-history-status ${status}">${escapeHtml(status)}</div>
+    </div>
+    <div class="xi-history-meta">
+        <div class="xi-history-meta-row"><span>Requested</span><span>${amount}</span></div>
+        <div class="xi-history-meta-row"><span>Jump Count</span><span>${escapeHtml(count)}</span></div>
+        <div class="xi-history-meta-row"><span>Submitted</span><span>${escapeHtml(created)}</span></div>
+        <div class="xi-history-meta-row"><span>Proof</span><span>${proof}</span></div>
+    </div>
+</div>`;
+        }).join('');
+
+        return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>📚 Claims History</strong>
+        <span class="xi-mini-badge">Recent 5</span>
+    </div>
+    ${items}
 </div>`;
     }
 
@@ -289,18 +402,9 @@ ${renderMemberCard(me)}
         <span class="xi-mini-badge">${enrollment ? 'Enrolled' : 'Not Enrolled'}</span>
     </div>
     <div class="xi-list">
-        <div class="xi-list-row">
-            <div class="xi-list-left">Enrollment</div>
-            <div class="xi-list-right">${enrollment ? escapeHtml(enrollment.status || 'active') : 'none'}</div>
-        </div>
-        <div class="xi-list-row">
-            <div class="xi-list-left">Covered Count</div>
-            <div class="xi-list-right">${plan.min_count === plan.max_count ? plan.max_count : (plan.min_count + ' to ' + plan.max_count)}</div>
-        </div>
-        <div class="xi-list-row">
-            <div class="xi-list-left">Last Claim</div>
-            <div class="xi-list-right">${latestClaim ? escapeHtml(latestClaim.status || 'pending') : 'none yet'}</div>
-        </div>
+        <div class="xi-list-row"><div class="xi-list-left">Enrollment</div><div class="xi-list-right">${enrollment ? escapeHtml(enrollment.status || 'active') : 'none'}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Covered Count</div><div class="xi-list-right">${plan.min_count === plan.max_count ? plan.max_count : (plan.min_count + ' to ' + plan.max_count)}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Last Claim</div><div class="xi-list-right">${latestClaim ? escapeHtml(latestClaim.status || 'pending') : 'none yet'}</div></div>
     </div>
 </div>
 
@@ -311,10 +415,13 @@ ${renderMemberCard(me)}
     </div>
     <div class="xi-actions">
         <button class="xi-btn primary" data-action="enroll" data-plan="${plan.plan_key}" type="button">Enroll</button>
-        <button class="xi-btn success" data-action="claim" data-plan="${plan.plan_key}" type="button">File Claim</button>
         <button class="xi-btn ghost" data-action="refresh" data-plan="${plan.plan_key}" type="button">Refresh</button>
     </div>
-</div>`;
+</div>
+
+${renderClaimForm(plan)}
+${renderClaimsHistory(claims)}
+`;
     }
 
     function renderAdminPanel() {
@@ -353,44 +460,115 @@ ${renderMemberCard(me)}
 ${rows}`;
     }
 
-    function loadAdminClaims(callback) {
-        if (!auth.member || !auth.member.is_admin) return callback();
-        apiGet('/api/insurance/admin/claims', function (err, data) {
-            if (!err && data && data.ok && Array.isArray(data.claims)) {
-                adminClaimsCache = data.claims;
-            }
-            callback();
-        });
+    function renderSettingsTab() {
+        var member = auth.member || null;
+        var badges = `<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>`;
+        if (member && member.is_admin) badges += `<span class="xi-badge admin">Admin</span>`;
+        var badgesHost = document.getElementById('xi-badges');
+        if (badgesHost) badgesHost.innerHTML = badges;
+
+        return `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>⚙️ How to Start</strong>
+        <span class="xi-mini-badge">Settings</span>
+    </div>
+    <div class="xi-help-list">
+        <div class="xi-help-item">Enter your Torn API key below to verify your player and confirm you are in the faction.</div>
+        <div class="xi-help-item">No Torn password is needed. This is faction-only access for insurance enrollment and claim handling.</div>
+        <div class="xi-help-item">After verification, the overlay uses a session token for future requests.</div>
+    </div>
+</div>
+
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>📜 ToS / API Key Storage & Usage</strong>
+        <span class="xi-mini-badge">Important</span>
+    </div>
+    <div class="xi-help-list">
+        <div class="xi-help-item"><strong>Purpose:</strong> Your key is used to verify your Torn identity and faction membership for this insurance tool.</div>
+        <div class="xi-help-item"><strong>Stored locally:</strong> Your browser stores a session token for reuse in the overlay.</div>
+        <div class="xi-help-item"><strong>Stored on service:</strong> The service currently stores your API key and session token for insurance access and claim handling.</div>
+        <div class="xi-help-item"><strong>Visibility:</strong> Insurance data may be visible to the service owner/admins as needed to review and process claims.</div>
+        <div class="xi-help-item"><strong>Only continue</strong> if you are comfortable using your API key with this insurance tool.</div>
+    </div>
+</div>
+
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🔐 Login / Session</strong>
+        <span class="xi-mini-badge">${member ? 'Active' : 'Required'}</span>
+    </div>
+
+    <label class="xi-label" for="xi-api-key-input">Torn API Key</label>
+    <input id="xi-api-key-input" class="xi-input" type="password" placeholder="Enter Torn API key" value="${escapeHtml(auth.api_key || '')}">
+
+    <div class="xi-actions">
+        <button class="xi-btn primary" id="xi-login-btn" type="button">Login with API Key</button>
+        ${member ? `<button class="xi-btn ghost" id="xi-logout-btn" type="button">Logout</button>` : ''}
+    </div>
+
+    <div class="xi-note">
+        Login and logout are handled entirely from this Settings tab.
+    </div>
+</div>
+
+${member ? `
+<div class="xi-card">
+    <div class="xi-card-title">
+        <strong>🪪 Verified Session</strong>
+        <span class="xi-mini-badge">${member.is_admin ? 'Admin' : 'Verified'}</span>
+    </div>
+    <div class="xi-list">
+        <div class="xi-list-row"><div class="xi-list-left">Name</div><div class="xi-list-right">${escapeHtml(member.name || '')}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Torn ID</div><div class="xi-list-right">${escapeHtml(member.torn_id || '')}</div></div>
+        <div class="xi-list-row"><div class="xi-list-left">Position</div><div class="xi-list-right">${escapeHtml(member.position || 'Member')}</div></div>
+    </div>
+</div>
+` : ''}
+`;
     }
 
     function renderBody() {
         var body = document.getElementById('xi-body');
         if (!body) return;
 
-        body.innerHTML = '<div class="xi-loading">Loading...</div>';
+        body.innerHTML = '<div id="xi-notice-host"></div><div class="xi-loading">Loading...</div>';
+        renderNotice();
 
         ensurePlans(function (err) {
             if (err) {
-                body.innerHTML = '<div class="xi-error">Could not load plans.</div>';
+                body.innerHTML = '<div id="xi-notice-host"></div><div class="xi-error">Could not load plans.</div>';
+                renderNotice();
+                return;
+            }
+
+            if (currentTab === 'settings') {
+                body.innerHTML = '<div id="xi-notice-host"></div>' + renderSettingsTab();
+                renderNotice();
+                bindUi(null, null);
                 return;
             }
 
             if (!auth.session_token || !auth.member) {
-                body.innerHTML = renderLoginCard();
+                body.innerHTML = '<div id="xi-notice-host"></div><div class="xi-error">Please log in from the Settings tab before using insurance tabs.</div>' + renderSettingsTab();
+                renderNotice();
                 bindUi(null, null);
                 return;
             }
 
             var plan = getPlan(currentTab);
             if (!plan) {
-                body.innerHTML = '<div class="xi-error">Plan not found.</div>';
+                body.innerHTML = '<div id="xi-notice-host"></div><div class="xi-error">Plan not found.</div>';
+                renderNotice();
                 return;
             }
 
             apiGet('/api/insurance/me?plan_key=' + encodeURIComponent(plan.plan_key), function (meErr, meData) {
                 if (meErr || !meData || !meData.ok) {
                     clearAuth();
-                    body.innerHTML = renderLoginCard();
+                    body.innerHTML = '<div id="xi-notice-host"></div><div class="xi-error">Session expired. Please log in again from the Settings tab.</div>' + renderSettingsTab();
+                    renderNotice();
                     bindUi(null, null);
                     return;
                 }
@@ -400,10 +578,48 @@ ${rows}`;
                 saveAuth();
 
                 loadAdminClaims(function () {
-                    body.innerHTML = renderPlanTab(plan, meData) + renderAdminPanel();
+                    body.innerHTML = '<div id="xi-notice-host"></div>' + renderPlanTab(plan, meData) + renderAdminPanel();
+                    renderNotice();
                     bindUi(plan, meData);
                 });
             });
+        });
+    }
+
+    function saveClaimDraft(planKey, plan) {
+        var proofEl = document.getElementById('xi-claim-proof-text');
+        var jumpEl = document.getElementById('xi-claim-jump-count');
+
+        claimDrafts[planKey] = {
+            jump_count: jumpEl ? Number(jumpEl.value || plan.max_count || 1) : Number(plan.max_count || 1),
+            proof_text: proofEl ? String(proofEl.value || '') : ''
+        };
+    }
+
+    function submitClaimForm(planKey, plan) {
+        saveClaimDraft(planKey, plan);
+
+        var jumpCount = Number(claimDrafts[planKey].jump_count || plan.max_count || 1);
+        var proofText = String(claimDrafts[planKey].proof_text || '');
+
+        setNotice('loading', 'Submitting claim...');
+
+        apiPost('/api/insurance/claim', {
+            plan_key: planKey,
+            jump_count: jumpCount,
+            proof_text: proofText
+        }, function (err, data) {
+            if (err) {
+                setNotice('error', 'Claim failed.');
+                return;
+            }
+            if (!data || !data.ok) {
+                setNotice('error', (data && data.error) || 'Claim failed.');
+                return;
+            }
+            claimDrafts[planKey].proof_text = '';
+            setNotice('success', 'Claim submitted.');
+            renderBody();
         });
     }
 
@@ -411,17 +627,24 @@ ${rows}`;
         var loginBtn = document.getElementById('xi-login-btn');
         if (loginBtn) {
             loginBtn.addEventListener('click', function () {
-                ensureAuthenticated(function (ok) {
-                    if (ok) renderBody();
-                });
+                verifyLoginFromSettings();
+            });
+        }
+
+        var apiInput = document.getElementById('xi-api-key-input');
+        if (apiInput) {
+            apiInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') verifyLoginFromSettings();
             });
         }
 
         var logoutBtn = document.getElementById('xi-logout-btn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', function () {
+                setNotice('loading', 'Logging out...');
                 apiPost('/api/insurance/auth/logout', {}, function () {
                     clearAuth();
+                    setNotice('success', 'Logged out.');
                     renderBody();
                 });
             });
@@ -431,6 +654,7 @@ ${rows}`;
         if (refreshAdmin) {
             refreshAdmin.addEventListener('click', function () {
                 adminClaimsCache = null;
+                setNotice('loading', 'Refreshing claims...');
                 renderBody();
             });
         }
@@ -441,40 +665,37 @@ ${rows}`;
                 var planKey = btn.getAttribute('data-plan');
 
                 if (action === 'refresh') {
+                    setNotice('loading', 'Refreshing plan data...');
                     renderBody();
                     return;
                 }
 
                 if (action === 'enroll') {
+                    setNotice('loading', 'Enrolling...');
                     apiPost('/api/insurance/enroll', { plan_key: planKey }, function (err, data) {
-                        if (err) return alert('Enroll failed.');
-                        if (!data || !data.ok) return alert((data && data.error) || 'Enroll failed.');
-                        alert('Enrolled successfully.');
+                        if (err) {
+                            setNotice('error', 'Enroll failed.');
+                            return;
+                        }
+                        if (!data || !data.ok) {
+                            setNotice('error', (data && data.error) || 'Enroll failed.');
+                            return;
+                        }
+                        setNotice('success', 'Enrolled successfully.');
                         renderBody();
                     });
                     return;
                 }
 
-                if (action === 'claim') {
-                    var jumpCount = plan && plan.plan_key === 'jump_1_4'
-                        ? Number(prompt('Enter jump count between 1 and 4', '1') || 0)
-                        : Number((plan && plan.max_count) || 1);
+                if (action === 'save_claim_draft') {
+                    saveClaimDraft(planKey, plan);
+                    setNotice('success', 'Claim draft saved.');
+                    return;
+                }
 
-                    if (!jumpCount) return;
-
-                    var proofText = prompt('Enter proof or short claim note', '');
-                    if (proofText === null) return;
-
-                    apiPost('/api/insurance/claim', {
-                        plan_key: planKey,
-                        jump_count: jumpCount,
-                        proof_text: proofText
-                    }, function (err, data) {
-                        if (err) return alert('Claim failed.');
-                        if (!data || !data.ok) return alert((data && data.error) || 'Claim failed.');
-                        alert('Claim submitted.');
-                        renderBody();
-                    });
+                if (action === 'submit_claim_form') {
+                    submitClaimForm(planKey, plan);
+                    return;
                 }
             });
         });
@@ -483,17 +704,24 @@ ${rows}`;
             btn.addEventListener('click', function () {
                 var action = btn.getAttribute('data-admin-action');
                 var claimId = btn.getAttribute('data-claim-id');
-
                 if (!claimId) return;
 
                 var path = action === 'approve'
                     ? '/api/insurance/admin/claims/' + claimId + '/approve'
                     : '/api/insurance/admin/claims/' + claimId + '/deny';
 
+                setNotice('loading', action === 'approve' ? 'Approving claim...' : 'Denying claim...');
+
                 apiPost(path, {}, function (err, data) {
-                    if (err) return alert('Admin action failed.');
-                    if (!data || !data.ok) return alert((data && data.error) || 'Admin action failed.');
-                    alert(action === 'approve' ? 'Claim approved.' : 'Claim denied.');
+                    if (err) {
+                        setNotice('error', 'Admin action failed.');
+                        return;
+                    }
+                    if (!data || !data.ok) {
+                        setNotice('error', (data && data.error) || 'Admin action failed.');
+                        return;
+                    }
+                    setNotice('success', action === 'approve' ? 'Claim approved.' : 'Claim denied.');
                     renderBody();
                 });
             });
@@ -534,9 +762,10 @@ ${rows}`;
 </div>
 
 <div id="xi-tabs">
-    <button class="xi-tab active" data-tab="xanax_stack" type="button">Xanax Stack</button>
+    <button class="xi-tab active" data-tab="xanax_stack" type="button">Stack</button>
     <button class="xi-tab" data-tab="jump_1_4" type="button">1–4 Jumps</button>
-    <button class="xi-tab" data-tab="xanax_only" type="button">Single Xanax</button>
+    <button class="xi-tab" data-tab="xanax_only" type="button">Single</button>
+    <button class="xi-tab" data-tab="settings" type="button">Settings</button>
 </div>
 
 <div id="xi-body"></div>
