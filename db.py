@@ -32,9 +32,23 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS insurance_members (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        torn_id INTEGER NOT NULL,
+        torn_id INTEGER NOT NULL UNIQUE,
         name TEXT NOT NULL,
         faction_id INTEGER NOT NULL,
+        position TEXT DEFAULT '',
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
+        session_token TEXT,
+        api_key TEXT,
+        verified_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        last_auth_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS insurance_enrollments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        torn_id INTEGER NOT NULL,
         plan_key TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'active',
         enrolled_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -108,13 +122,72 @@ def get_plan(plan_key):
     return dict(row) if row else None
 
 
-def get_member_plan(torn_id, plan_key=None):
+def upsert_member_auth(torn_id, name, faction_id, position, is_admin, session_token, api_key):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    existing = cur.execute("""
+        SELECT id
+        FROM insurance_members
+        WHERE torn_id = ?
+        LIMIT 1
+    """, (torn_id,)).fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE insurance_members
+            SET name = ?,
+                faction_id = ?,
+                position = ?,
+                is_admin = ?,
+                status = 'active',
+                session_token = ?,
+                api_key = ?,
+                verified_at = CURRENT_TIMESTAMP,
+                last_auth_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (name, faction_id, position, is_admin, session_token, api_key, existing["id"]))
+    else:
+        cur.execute("""
+            INSERT INTO insurance_members
+            (torn_id, name, faction_id, position, is_admin, status, session_token, api_key)
+            VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+        """, (torn_id, name, faction_id, position, is_admin, session_token, api_key))
+
+    conn.commit()
+    conn.close()
+
+
+def get_member_by_session(session_token):
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT *
+        FROM insurance_members
+        WHERE session_token = ?
+        LIMIT 1
+    """, (session_token,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def clear_member_session(session_token):
+    conn = get_conn()
+    conn.execute("""
+        UPDATE insurance_members
+        SET session_token = NULL
+        WHERE session_token = ?
+    """, (session_token,))
+    conn.commit()
+    conn.close()
+
+
+def get_member_enrollment(torn_id, plan_key=None):
     conn = get_conn()
 
     if plan_key:
         row = conn.execute("""
             SELECT *
-            FROM insurance_members
+            FROM insurance_enrollments
             WHERE torn_id = ? AND plan_key = ?
             LIMIT 1
         """, (torn_id, plan_key)).fetchone()
@@ -123,7 +196,7 @@ def get_member_plan(torn_id, plan_key=None):
 
     rows = conn.execute("""
         SELECT *
-        FROM insurance_members
+        FROM insurance_enrollments
         WHERE torn_id = ?
         ORDER BY enrolled_at DESC
     """, (torn_id,)).fetchall()
@@ -131,28 +204,28 @@ def get_member_plan(torn_id, plan_key=None):
     return [dict(r) for r in rows]
 
 
-def enroll_member(torn_id, name, faction_id, plan_key):
+def enroll_member_plan(torn_id, plan_key):
     conn = get_conn()
     cur = conn.cursor()
 
     existing = cur.execute("""
-        SELECT id, status
-        FROM insurance_members
+        SELECT id
+        FROM insurance_enrollments
         WHERE torn_id = ? AND plan_key = ?
         LIMIT 1
     """, (torn_id, plan_key)).fetchone()
 
     if existing:
         cur.execute("""
-            UPDATE insurance_members
-            SET name = ?, faction_id = ?, status = 'active'
+            UPDATE insurance_enrollments
+            SET status = 'active'
             WHERE id = ?
-        """, (name, faction_id, existing["id"]))
+        """, (existing["id"],))
     else:
         cur.execute("""
-            INSERT INTO insurance_members (torn_id, name, faction_id, plan_key, status)
-            VALUES (?, ?, ?, ?, 'active')
-        """, (torn_id, name, faction_id, plan_key))
+            INSERT INTO insurance_enrollments (torn_id, plan_key, status)
+            VALUES (?, ?, 'active')
+        """, (torn_id, plan_key))
 
     conn.commit()
     conn.close()
@@ -161,13 +234,11 @@ def enroll_member(torn_id, name, faction_id, plan_key):
 def create_claim(torn_id, name, faction_id, plan_key, jump_count, proof_text, requested_amount):
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
         INSERT INTO insurance_claims
         (torn_id, name, faction_id, plan_key, jump_count, proof_text, requested_amount, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     """, (torn_id, name, faction_id, plan_key, jump_count, proof_text, requested_amount))
-
     claim_id = cur.lastrowid
     conn.commit()
     conn.close()
