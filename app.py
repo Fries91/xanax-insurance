@@ -18,9 +18,13 @@ from db import (
     create_claim,
     get_member_claims,
     get_all_claims,
+    get_claim_by_id,
     get_pending_claim_count,
     get_latest_claim_for_plan,
     set_claim_status,
+    mark_claim_paid,
+    get_payouts_for_member,
+    get_all_payouts,
 )
 
 app = Flask(__name__)
@@ -91,10 +95,9 @@ def serialize_claim(claim):
         return claim
 
     row = dict(claim)
-    created_dt = normalize_dt(row.get("created_at"))
-    reviewed_dt = normalize_dt(row.get("reviewed_at"))
-    row["created_at"] = iso_z(created_dt)
-    row["reviewed_at"] = iso_z(reviewed_dt)
+    row["created_at"] = iso_z(normalize_dt(row.get("created_at")))
+    row["reviewed_at"] = iso_z(normalize_dt(row.get("reviewed_at")))
+    row["paid_at"] = iso_z(normalize_dt(row.get("paid_at")))
     return row
 
 
@@ -102,11 +105,23 @@ def serialize_claims(claims):
     return [serialize_claim(c) for c in (claims or [])]
 
 
+def serialize_payout(payout):
+    if not payout:
+        return payout
+
+    row = dict(payout)
+    row["created_at"] = iso_z(normalize_dt(row.get("created_at")))
+    return row
+
+
+def serialize_payouts(payouts):
+    return [serialize_payout(p) for p in (payouts or [])]
+
+
 def serialize_plan(plan):
     if not plan:
         return None
-    row = dict(plan)
-    return row
+    return dict(plan)
 
 
 def get_session_member():
@@ -129,7 +144,7 @@ def require_admin():
     member, err = require_auth()
     if err:
         return None, err
-    if not int(member.get("is_admin", 0)):
+    if int(member.get("is_admin", 0)) != 1 or int(member["torn_id"]) != ADMIN_TORN_ID:
         return None, api_error("Admin only", 403)
     return member, None
 
@@ -261,7 +276,7 @@ def insurance_auth_verify():
         "tos": {
             "data_storage": "Session token stored locally in browser. API key stored on service for authenticated insurance access.",
             "data_sharing": "No public sharing. Insurance data visible to service owner/admins as needed for claims handling.",
-            "purpose": "Faction-only insurance authentication, enrollments, and claim review.",
+            "purpose": "Faction-only insurance authentication, enrollments, claim review, and payout logging.",
             "key_access": "Uses player's Torn API key for authentication and faction verification."
         }
     })
@@ -290,6 +305,7 @@ def insurance_me():
     plan_key = (request.args.get("plan_key") or "").strip()
     enrollment = get_member_enrollment(member["torn_id"], plan_key or None)
     claims = get_member_claims(member["torn_id"], plan_key or None)
+    payouts = get_payouts_for_member(member["torn_id"], plan_key or None)
 
     plan_rules = None
     if plan_key:
@@ -308,6 +324,7 @@ def insurance_me():
         },
         "enrollment": enrollment,
         "claims": serialize_claims(claims),
+        "payouts": serialize_payouts(payouts),
         "plan_rules": plan_rules,
     })
 
@@ -409,6 +426,10 @@ def insurance_admin_approve(claim_id):
     if err:
         return err
 
+    claim = get_claim_by_id(claim_id)
+    if not claim:
+        return api_error("Claim not found", 404)
+
     set_claim_status(claim_id, "approved", member["torn_id"])
     return jsonify({"ok": True, "message": "Claim approved"})
 
@@ -419,8 +440,62 @@ def insurance_admin_deny(claim_id):
     if err:
         return err
 
+    claim = get_claim_by_id(claim_id)
+    if not claim:
+        return api_error("Claim not found", 404)
+
     set_claim_status(claim_id, "denied", member["torn_id"])
     return jsonify({"ok": True, "message": "Claim denied"})
+
+
+@app.post("/api/insurance/admin/claims/<int:claim_id>/pay")
+def insurance_admin_pay(claim_id):
+    member, err = require_admin()
+    if err:
+        return err
+
+    claim = get_claim_by_id(claim_id)
+    if not claim:
+        return api_error("Claim not found", 404)
+
+    status = str(claim.get("status") or "").lower()
+    if status != "approved":
+        return api_error("Only approved claims can be marked paid", 400)
+
+    data = request.get_json(force=True) if request.data else {}
+    payment_note = (data.get("payment_note") or "").strip()
+
+    payout_result = mark_claim_paid(
+        claim_id=claim_id,
+        paid_by=member["torn_id"],
+        paid_by_name=member["name"],
+        payment_note=payment_note,
+    )
+
+    if payout_result == "already_paid":
+        return api_error("Claim is already marked paid", 400)
+
+    return jsonify({
+        "ok": True,
+        "message": "Claim marked paid",
+        "payout_id": payout_result
+    })
+
+
+@app.get("/api/insurance/admin/payouts")
+def insurance_admin_payouts():
+    member, err = require_admin()
+    if err:
+        return err
+
+    return jsonify({
+        "ok": True,
+        "admin": {
+            "torn_id": member["torn_id"],
+            "name": member["name"]
+        },
+        "payouts": serialize_payouts(get_all_payouts())
+    })
 
 
 if __name__ == "__main__":
