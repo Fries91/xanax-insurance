@@ -1,4 +1,6 @@
 import os
+import secrets
+import requests
 from flask import Flask, jsonify, request
 
 from db import (
@@ -6,8 +8,11 @@ from db import (
     seed_plans,
     get_plans,
     get_plan,
-    get_member_plan,
-    enroll_member,
+    upsert_member_auth,
+    get_member_by_session,
+    clear_member_session,
+    get_member_enrollment,
+    enroll_member_plan,
     create_claim,
     get_member_claims,
     get_all_claims,
@@ -19,17 +24,65 @@ app = Flask(__name__)
 init_db()
 seed_plans()
 
-FACTION_ID = int(os.getenv("FACTION_ID", "123456"))  # replace in Render env
+FACTION_ID = int(os.getenv("FACTION_ID", "123456"))
 ADMIN_TORN_ID = int(os.getenv("ADMIN_TORN_ID", "3679030"))
+TORN_API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com")
+TORN_API_TIMEOUT = 20
+
+
+def api_error(message, status=400):
+    return jsonify({"ok": False, "error": message}), status
+
+
+def get_session_member():
+    token = request.headers.get("X-Session-Token", "").strip()
+    if not token:
+        return None
+    return get_member_by_session(token)
+
+
+def require_auth():
+    member = get_session_member()
+    if not member:
+        return None, api_error("Not authenticated", 401)
+    if int(member["faction_id"]) != FACTION_ID:
+        return None, api_error("Faction members only", 403)
+    return member, None
+
+
+def require_admin():
+    member, err = require_auth()
+    if err:
+        return None, err
+    if not int(member.get("is_admin", 0)):
+        return None, api_error("Admin only", 403)
+    return member, None
+
+
+def call_torn_key_info(api_key: str):
+    url = f"{TORN_API_BASE}/v2/key/info"
+    res = requests.get(
+        url,
+        headers={"Authorization": f"ApiKey {api_key}"},
+        timeout=TORN_API_TIMEOUT,
+    )
+    res.raise_for_status()
+    return res.json()
+
+
+def call_torn_user_profile(api_key: str):
+    url = f"{TORN_API_BASE}/user/?selections=profile&key={api_key}"
+    res = requests.get(url, timeout=TORN_API_TIMEOUT)
+    res.raise_for_status()
+    data = res.json()
+    if isinstance(data, dict) and data.get("error"):
+        raise ValueError(data["error"].get("error", "Torn API error"))
+    return data
 
 
 @app.get("/")
 def home():
-    return jsonify({
-        "ok": True,
-        "app": "Faction Xanax Insurance",
-        "status": "running"
-    })
+    return jsonify({"ok": True, "app": "Faction Xanax Insurance", "status": "running"})
 
 
 @app.get("/health")
@@ -37,59 +90,119 @@ def health():
     return jsonify({"ok": True})
 
 
-@app.get("/api/insurance/plans")
-def insurance_plans():
+@app.post("/api/insurance/auth/verify")
+def insurance_auth_verify():
+    data = request.get_json(force=True)
+    api_key = (data.get("api_key") or "").strip()
+
+    if not api_key:
+        return api_error("Missing API key", 400)
+
+    try:
+        key_info = call_torn_key_info(api_key)
+        user_obj = (key_info or {}).get("user") or {}
+        user_id = int(user_obj.get("id") or 0)
+        faction_id = int(user_obj.get("faction_id") or 0)
+
+        if not user_id:
+            return api_error("Could not verify user from API key", 403)
+
+        profile = call_torn_user_profile(api_key)
+        name = str(profile.get("name") or f"User {user_id}")
+        faction = profile.get("faction") or {}
+        position = str(faction.get("position") or "")
+
+    except requests.HTTPError:
+        return api_error("Torn API request failed", 502)
+    except Exception as exc:
+        return api_error(f"Authentication failed: {exc}", 403)
+
+    if faction_id != FACTION_ID:
+        return api_error("Faction members only", 403)
+
+    session_token = secrets.token_urlsafe(32)
+    is_admin = 1 if user_id == ADMIN_TORN_ID else 0
+
+    upsert_member_auth(
+        torn_id=user_id,
+        name=name,
+        faction_id=faction_id,
+        position=position,
+        is_admin=is_admin,
+        session_token=session_token,
+        api_key=api_key,
+    )
+
     return jsonify({
         "ok": True,
-        "plans": get_plans()
+        "session_token": session_token,
+        "member": {
+            "torn_id": user_id,
+            "name": name,
+            "faction_id": faction_id,
+            "position": position,
+            "is_admin": bool(is_admin),
+        },
+        "tos": {
+            "data_storage": "Session token stored locally in browser. API key stored on service for authenticated insurance access.",
+            "data_sharing": "No public sharing. Insurance data visible to service owner/admins as needed for claims handling.",
+            "purpose": "Faction-only insurance authentication, enrollments, and claim review.",
+            "key_access": "Uses player's Torn API key for authentication and faction verification."
+        }
     })
+
+
+@app.post("/api/insurance/auth/logout")
+def insurance_auth_logout():
+    member = get_session_member()
+    if member:
+        clear_member_session(member["session_token"])
+    return jsonify({"ok": True})
+
+
+@app.get("/api/insurance/plans")
+def insurance_plans():
+    return jsonify({"ok": True, "plans": get_plans()})
 
 
 @app.get("/api/insurance/me")
 def insurance_me():
-    try:
-        torn_id = int(request.args.get("torn_id", "0"))
-        plan_key = (request.args.get("plan_key") or "").strip()
-    except ValueError:
-        return jsonify({"ok": False, "error": "Invalid torn_id"}), 400
+    member, err = require_auth()
+    if err:
+        return err
 
-    if not torn_id:
-        return jsonify({"ok": False, "error": "Missing torn_id"}), 400
-
-    member = get_member_plan(torn_id, plan_key or None)
-    claims = get_member_claims(torn_id, plan_key or None)
+    plan_key = (request.args.get("plan_key") or "").strip()
+    enrollment = get_member_enrollment(member["torn_id"], plan_key or None)
+    claims = get_member_claims(member["torn_id"], plan_key or None)
 
     return jsonify({
         "ok": True,
-        "member": member,
+        "member": {
+            "torn_id": member["torn_id"],
+            "name": member["name"],
+            "faction_id": member["faction_id"],
+            "position": member.get("position", ""),
+            "is_admin": bool(member.get("is_admin", 0)),
+        },
+        "enrollment": enrollment,
         "claims": claims
     })
 
 
 @app.post("/api/insurance/enroll")
 def insurance_enroll():
+    member, err = require_auth()
+    if err:
+        return err
+
     data = request.get_json(force=True)
-
-    try:
-        torn_id = int(data.get("torn_id", 0))
-        faction_id = int(data.get("faction_id", 0))
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "Invalid numeric fields"}), 400
-
-    name = (data.get("name") or "").strip()
     plan_key = (data.get("plan_key") or "").strip()
-
-    if not torn_id or not faction_id or not name or not plan_key:
-        return jsonify({"ok": False, "error": "Missing fields"}), 400
-
-    if faction_id != FACTION_ID:
-        return jsonify({"ok": False, "error": "Faction members only"}), 403
 
     plan = get_plan(plan_key)
     if not plan:
-        return jsonify({"ok": False, "error": "Plan not found"}), 404
+        return api_error("Plan not found", 404)
 
-    enroll_member(torn_id, name, faction_id, plan_key)
+    enroll_member_plan(member["torn_id"], plan_key)
 
     return jsonify({
         "ok": True,
@@ -100,41 +213,35 @@ def insurance_enroll():
 
 @app.post("/api/insurance/claim")
 def insurance_claim():
+    member, err = require_auth()
+    if err:
+        return err
+
     data = request.get_json(force=True)
-
-    try:
-        torn_id = int(data.get("torn_id", 0))
-        faction_id = int(data.get("faction_id", 0))
-        jump_count = int(data.get("jump_count", 1))
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "Invalid numeric fields"}), 400
-
-    name = (data.get("name") or "").strip()
     plan_key = (data.get("plan_key") or "").strip()
     proof_text = (data.get("proof_text") or "").strip()
 
-    if not torn_id or not faction_id or not name or not plan_key:
-        return jsonify({"ok": False, "error": "Missing fields"}), 400
-
-    if faction_id != FACTION_ID:
-        return jsonify({"ok": False, "error": "Faction members only"}), 403
+    try:
+        jump_count = int(data.get("jump_count", 1))
+    except (ValueError, TypeError):
+        return api_error("Invalid jump count", 400)
 
     plan = get_plan(plan_key)
     if not plan:
-        return jsonify({"ok": False, "error": "Plan not found"}), 404
+        return api_error("Plan not found", 404)
 
-    membership = get_member_plan(torn_id, plan_key)
-    if not membership:
-        return jsonify({"ok": False, "error": "You are not enrolled in this plan"}), 403
+    enrollment = get_member_enrollment(member["torn_id"], plan_key)
+    if not enrollment:
+        return api_error("You are not enrolled in this plan", 403)
 
     if jump_count < int(plan["min_count"]) or jump_count > int(plan["max_count"]):
-        return jsonify({"ok": False, "error": "Jump count outside plan coverage"}), 400
+        return api_error("Jump count outside plan coverage", 400)
 
     requested_amount = int(plan["payout_amount"])
     claim_id = create_claim(
-        torn_id=torn_id,
-        name=name,
-        faction_id=faction_id,
+        torn_id=member["torn_id"],
+        name=member["name"],
+        faction_id=member["faction_id"],
         plan_key=plan_key,
         jump_count=jump_count,
         proof_text=proof_text,
@@ -151,51 +258,37 @@ def insurance_claim():
 
 @app.get("/api/insurance/admin/claims")
 def insurance_admin_claims():
-    try:
-        torn_id = int(request.args.get("torn_id", "0"))
-    except ValueError:
-        return jsonify({"ok": False, "error": "Invalid torn_id"}), 400
-
-    if torn_id != ADMIN_TORN_ID:
-        return jsonify({"ok": False, "error": "Admin only"}), 403
+    member, err = require_admin()
+    if err:
+        return err
 
     return jsonify({
         "ok": True,
+        "admin": {
+            "torn_id": member["torn_id"],
+            "name": member["name"]
+        },
         "claims": get_all_claims()
     })
 
 
 @app.post("/api/insurance/admin/claims/<int:claim_id>/approve")
 def insurance_admin_approve(claim_id):
-    data = request.get_json(force=True)
+    member, err = require_admin()
+    if err:
+        return err
 
-    try:
-        admin_torn_id = int(data.get("admin_torn_id", 0))
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "Invalid admin_torn_id"}), 400
-
-    if admin_torn_id != ADMIN_TORN_ID:
-        return jsonify({"ok": False, "error": "Admin only"}), 403
-
-    set_claim_status(claim_id, "approved", admin_torn_id)
-
+    set_claim_status(claim_id, "approved", member["torn_id"])
     return jsonify({"ok": True, "message": "Claim approved"})
 
 
 @app.post("/api/insurance/admin/claims/<int:claim_id>/deny")
 def insurance_admin_deny(claim_id):
-    data = request.get_json(force=True)
+    member, err = require_admin()
+    if err:
+        return err
 
-    try:
-        admin_torn_id = int(data.get("admin_torn_id", 0))
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "Invalid admin_torn_id"}), 400
-
-    if admin_torn_id != ADMIN_TORN_ID:
-        return jsonify({"ok": False, "error": "Admin only"}), 403
-
-    set_claim_status(claim_id, "denied", admin_torn_id)
-
+    set_claim_status(claim_id, "denied", member["torn_id"])
     return jsonify({"ok": True, "message": "Claim denied"})
 
 
