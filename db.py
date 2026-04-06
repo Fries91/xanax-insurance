@@ -253,14 +253,14 @@ def get_member_claims(torn_id, plan_key=None):
             SELECT *
             FROM insurance_claims
             WHERE torn_id = ? AND plan_key = ?
-            ORDER BY created_at DESC
+            ORDER BY datetime(created_at) DESC, id DESC
         """, (torn_id, plan_key)).fetchall()
     else:
         rows = conn.execute("""
             SELECT *
             FROM insurance_claims
             WHERE torn_id = ?
-            ORDER BY created_at DESC
+            ORDER BY datetime(created_at) DESC, id DESC
         """, (torn_id,)).fetchall()
 
     conn.close()
@@ -272,7 +272,7 @@ def get_all_claims():
     rows = conn.execute("""
         SELECT *
         FROM insurance_claims
-        ORDER BY created_at DESC
+        ORDER BY datetime(created_at) DESC, id DESC
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
