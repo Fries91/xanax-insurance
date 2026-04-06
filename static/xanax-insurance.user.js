@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Faction Xanax Insurance
 // @namespace    fries91-xanax-insurance
-// @version      1.9.0
+// @version      2.0.0
 // @description  Medical-style faction Xanax insurance overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -85,73 +85,505 @@
 
     function addStyles() {
         GM_addStyle(`
-#xi-pill-launcher{position:fixed!important;top:52%!important;right:14px!important;transform:translateY(-50%)!important;width:52px!important;height:52px!important;border-radius:16px!important;z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;cursor:pointer!important;border:1px solid rgba(120,220,240,.35)!important;background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.22),transparent 35%),linear-gradient(180deg,#102a35 0%,#0a171d 100%)!important;box-shadow:0 8px 24px rgba(0,0,0,.45),0 0 0 1px rgba(72,199,217,.12),0 0 18px rgba(72,199,217,.16)!important}
-#xi-pill-launcher .xi-pill-svg{width:30px!important;height:30px!important;display:block!important}
-#xi-pill-launcher .xi-plus-badge{position:absolute!important;right:-4px!important;bottom:-4px!important;width:19px!important;height:19px!important;border-radius:999px!important;display:flex!important;align-items:center!important;justify-content:center!important;font-size:12px!important;font-weight:900!important;color:#eaffff!important;background:linear-gradient(180deg,#57d6a6 0%,#299b74 100%)!important;border:2px solid #091116!important}
-#xi-overlay{position:fixed!important;top:70px!important;right:78px!important;width:400px!important;max-width:calc(100vw - 24px)!important;max-height:calc(100vh - 90px)!important;overflow:hidden!important;z-index:2147483646!important;border-radius:18px!important;background:radial-gradient(circle at top right,rgba(72,199,217,.10),transparent 28%),linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;border:1px solid rgba(72,199,217,.22)!important;box-shadow:0 20px 40px rgba(0,0,0,.45)!important;color:#e9f7fb!important;font-family:Arial,Helvetica,sans-serif!important}
+#xi-headerbar{
+    position:fixed!important;
+    top:52px!important;
+    left:0!important;
+    right:0!important;
+    height:46px!important;
+    z-index:2147483645!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    pointer-events:none!important;
+}
+#xi-headerbar-inner{
+    width:min(1180px,calc(100vw - 18px))!important;
+    height:38px!important;
+    border-radius:14px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    padding:0 10px!important;
+    background:
+        radial-gradient(circle at top right,rgba(72,199,217,.10),transparent 28%),
+        linear-gradient(180deg,rgba(16,32,40,.96) 0%,rgba(8,18,24,.96) 100%)!important;
+    border:1px solid rgba(72,199,217,.16)!important;
+    box-shadow:0 10px 24px rgba(0,0,0,.28)!important;
+    pointer-events:auto!important;
+    box-sizing:border-box!important;
+}
+#xi-headerbar-left{
+    display:flex!important;
+    align-items:center!important;
+    gap:10px!important;
+    min-width:0!important;
+}
+#xi-headerbar-icon{
+    width:34px!important;
+    height:34px!important;
+    border-radius:12px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    cursor:pointer!important;
+    border:1px solid rgba(120,220,240,.28)!important;
+    background:
+        radial-gradient(circle at 30% 25%,rgba(255,255,255,.18),transparent 35%),
+        linear-gradient(180deg,#102a35 0%,#0a171d 100%)!important;
+    box-shadow:
+        0 6px 14px rgba(0,0,0,.28),
+        0 0 0 1px rgba(72,199,217,.10),
+        0 0 14px rgba(72,199,217,.12)!important;
+}
+#xi-headerbar-icon .xi-pill-svg{
+    width:22px!important;
+    height:22px!important;
+    display:block!important;
+}
+#xi-headerbar-titlewrap{
+    min-width:0!important;
+    display:flex!important;
+    flex-direction:column!important;
+    justify-content:center!important;
+}
+#xi-headerbar-title{
+    font-size:12px!important;
+    font-weight:800!important;
+    color:#ecfbff!important;
+    line-height:1.1!important;
+    white-space:nowrap!important;
+}
+#xi-headerbar-sub{
+    font-size:10px!important;
+    color:#8fb5bd!important;
+    line-height:1.1!important;
+    white-space:nowrap!important;
+}
+#xi-headerbar-right{
+    display:flex!important;
+    align-items:center!important;
+    gap:8px!important;
+}
+.xi-header-chip{
+    display:inline-flex!important;
+    align-items:center!important;
+    padding:5px 9px!important;
+    border-radius:999px!important;
+    font-size:10px!important;
+    font-weight:700!important;
+    color:#dffcff!important;
+    background:rgba(72,199,217,.10)!important;
+    border:1px solid rgba(72,199,217,.16)!important;
+}
+
+#xi-overlay{
+    position:fixed!important;
+    top:104px!important;
+    right:18px!important;
+    width:400px!important;
+    max-width:calc(100vw - 24px)!important;
+    max-height:calc(100vh - 122px)!important;
+    overflow:hidden!important;
+    z-index:2147483646!important;
+    border-radius:18px!important;
+    background:
+        radial-gradient(circle at top right,rgba(72,199,217,.10),transparent 28%),
+        linear-gradient(180deg,rgba(16,32,40,.98) 0%,rgba(8,18,24,.98) 100%)!important;
+    border:1px solid rgba(72,199,217,.22)!important;
+    box-shadow:0 20px 40px rgba(0,0,0,.45)!important;
+    color:#e9f7fb!important;
+    font-family:Arial,Helvetica,sans-serif!important;
+}
 #xi-overlay.hidden{display:none!important}
-#xi-header{padding:14px 14px 12px 14px!important;border-bottom:1px solid rgba(72,199,217,.14)!important}
-#xi-header-top{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important}
-#xi-brand{display:flex!important;align-items:center!important;gap:10px!important}
-#xi-brand-icon{width:38px!important;height:38px!important;border-radius:12px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:linear-gradient(180deg,#14323d 0%,#0b1a22 100%)!important;border:1px solid rgba(137,228,242,.24)!important}
-#xi-brand-icon svg{width:22px!important;height:22px!important;display:block!important}
-#xi-title{font-size:16px!important;font-weight:800!important;color:#ecfbff!important}
-#xi-subtitle{margin-top:2px!important;font-size:11px!important;color:#9fc0c7!important}
-#xi-close{width:32px!important;height:32px!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:10px!important;background:rgba(255,255,255,.04)!important;color:#dff7fb!important;cursor:pointer!important;font-size:18px!important}
-#xi-badges{display:flex!important;gap:8px!important;flex-wrap:wrap!important;margin-top:10px!important}
-.xi-badge{display:inline-flex!important;align-items:center!important;padding:5px 9px!important;border-radius:999px!important;font-size:11px!important;font-weight:700!important}
-.xi-badge.faction{color:#dffcff!important;background:rgba(72,199,217,.12)!important;border:1px solid rgba(72,199,217,.20)!important}
-.xi-badge.covered{color:#eafff4!important;background:rgba(80,216,144,.12)!important;border:1px solid rgba(80,216,144,.20)!important}
-.xi-badge.admin{color:#fff0f0!important;background:rgba(255,107,107,.12)!important;border:1px solid rgba(255,107,107,.20)!important}
-#xi-tabs{display:grid!important;grid-template-columns:1fr 1fr 1fr 1fr!important;gap:8px!important;padding:12px 14px 10px 14px!important;border-bottom:1px solid rgba(72,199,217,.10)!important}
-.xi-tab{border:1px solid rgba(255,255,255,.07)!important;background:rgba(255,255,255,.03)!important;color:#cfe9ee!important;border-radius:12px!important;padding:10px 8px!important;cursor:pointer!important;font-size:12px!important;font-weight:700!important;text-align:center!important}
-.xi-tab.active{color:#f3feff!important;background:linear-gradient(180deg,rgba(72,199,217,.18),rgba(72,199,217,.07))!important;border-color:rgba(72,199,217,.25)!important}
-#xi-body{max-height:calc(100vh - 220px)!important;overflow-y:auto!important;padding:14px!important}
+#xi-header{
+    padding:14px 14px 12px 14px!important;
+    border-bottom:1px solid rgba(72,199,217,.14)!important;
+}
+#xi-header-top{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:10px!important;
+}
+#xi-brand{
+    display:flex!important;
+    align-items:center!important;
+    gap:10px!important;
+}
+#xi-brand-icon{
+    width:38px!important;
+    height:38px!important;
+    border-radius:12px!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    background:linear-gradient(180deg,#14323d 0%,#0b1a22 100%)!important;
+    border:1px solid rgba(137,228,242,.24)!important;
+}
+#xi-brand-icon svg{
+    width:22px!important;
+    height:22px!important;
+    display:block!important;
+}
+#xi-title{
+    font-size:16px!important;
+    font-weight:800!important;
+    color:#ecfbff!important;
+}
+#xi-subtitle{
+    margin-top:2px!important;
+    font-size:11px!important;
+    color:#9fc0c7!important;
+}
+#xi-close{
+    width:32px!important;
+    height:32px!important;
+    border:1px solid rgba(255,255,255,.08)!important;
+    border-radius:10px!important;
+    background:rgba(255,255,255,.04)!important;
+    color:#dff7fb!important;
+    cursor:pointer!important;
+    font-size:18px!important;
+}
+#xi-badges{
+    display:flex!important;
+    gap:8px!important;
+    flex-wrap:wrap!important;
+    margin-top:10px!important;
+}
+.xi-badge{
+    display:inline-flex!important;
+    align-items:center!important;
+    padding:5px 9px!important;
+    border-radius:999px!important;
+    font-size:11px!important;
+    font-weight:700!important;
+}
+.xi-badge.faction{
+    color:#dffcff!important;
+    background:rgba(72,199,217,.12)!important;
+    border:1px solid rgba(72,199,217,.20)!important;
+}
+.xi-badge.covered{
+    color:#eafff4!important;
+    background:rgba(80,216,144,.12)!important;
+    border:1px solid rgba(80,216,144,.20)!important;
+}
+.xi-badge.admin{
+    color:#fff0f0!important;
+    background:rgba(255,107,107,.12)!important;
+    border:1px solid rgba(255,107,107,.20)!important;
+}
+#xi-tabs{
+    display:grid!important;
+    grid-template-columns:1fr 1fr 1fr 1fr!important;
+    gap:8px!important;
+    padding:12px 14px 10px 14px!important;
+    border-bottom:1px solid rgba(72,199,217,.10)!important;
+}
+.xi-tab{
+    border:1px solid rgba(255,255,255,.07)!important;
+    background:rgba(255,255,255,.03)!important;
+    color:#cfe9ee!important;
+    border-radius:12px!important;
+    padding:10px 8px!important;
+    cursor:pointer!important;
+    font-size:12px!important;
+    font-weight:700!important;
+    text-align:center!important;
+}
+.xi-tab.active{
+    color:#f3feff!important;
+    background:linear-gradient(180deg,rgba(72,199,217,.18),rgba(72,199,217,.07))!important;
+    border-color:rgba(72,199,217,.25)!important;
+}
+#xi-body{
+    max-height:calc(100vh - 220px)!important;
+    overflow-y:auto!important;
+    padding:14px!important;
+}
 #xi-notice-host{margin-bottom:12px!important}
-.xi-card{margin-bottom:12px!important;border-radius:14px!important;border:1px solid rgba(255,255,255,.06)!important;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important;padding:12px!important}
-.xi-card-title{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;margin-bottom:10px!important}
-.xi-card-title strong{font-size:13px!important;color:#ecfbff!important}
-.xi-mini-badge{display:inline-flex!important;align-items:center!important;padding:4px 8px!important;border-radius:999px!important;font-size:10px!important;font-weight:800!important;color:#c9fbff!important;background:rgba(72,199,217,.12)!important;border:1px solid rgba(72,199,217,.18)!important}
-.xi-mini-badge.active{color:#eafff4!important;background:rgba(80,216,144,.14)!important;border:1px solid rgba(80,216,144,.20)!important}
-.xi-mini-badge.inactive{color:#ffe6e6!important;background:rgba(255,107,107,.14)!important;border:1px solid rgba(255,107,107,.20)!important}
-.xi-mini-badge.pending{color:#fff5d8!important;background:rgba(242,193,78,.14)!important;border:1px solid rgba(242,193,78,.20)!important}
-.xi-grid{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important}
-.xi-stat{border-radius:12px!important;background:rgba(0,0,0,.14)!important;border:1px solid rgba(255,255,255,.05)!important;padding:10px!important}
-.xi-stat-label{font-size:11px!important;color:#9fc0c7!important;margin-bottom:5px!important}
-.xi-stat-value{font-size:15px!important;font-weight:800!important;color:#f1fdff!important}
-.xi-list{display:grid!important;gap:8px!important}
-.xi-list-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;padding:8px 10px!important;border-radius:10px!important;background:rgba(0,0,0,.12)!important;border:1px solid rgba(255,255,255,.04)!important}
-.xi-list-left{font-size:12px!important;color:#dff4f8!important}
-.xi-list-right{font-size:11px!important;color:#8fb5bd!important;text-align:right!important}
-.xi-actions{display:flex!important;gap:8px!important;flex-wrap:wrap!important}
-.xi-btn{appearance:none!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;padding:10px 12px!important;font-size:12px!important;font-weight:800!important;cursor:pointer!important}
-.xi-btn.primary{color:#ecfeff!important;background:linear-gradient(180deg,#1f94a8 0%,#12697a 100%)!important}
-.xi-btn.success{color:#effff6!important;background:linear-gradient(180deg,#39b47d 0%,#268961 100%)!important}
-.xi-btn.danger{color:#fff4f4!important;background:linear-gradient(180deg,#c95e5e 0%,#a34141 100%)!important}
-.xi-btn.ghost{color:#d7eef3!important;background:rgba(255,255,255,.04)!important}
-.xi-btn.disabled{opacity:.45!important;pointer-events:none!important;filter:grayscale(.2)!important}
-.xi-note{margin-top:8px!important;font-size:11px!important;color:#8fb5bd!important;line-height:1.45!important}
-.xi-loading,.xi-error,.xi-success{padding:12px 14px!important;border-radius:12px!important;border:1px solid rgba(255,255,255,.06)!important;font-size:12px!important}
-.xi-error{color:#ffd3d3!important;border-color:rgba(255,107,107,.18)!important;background:linear-gradient(180deg,rgba(255,107,107,.06),rgba(255,107,107,.03))!important}
-.xi-success{color:#eafff4!important;border-color:rgba(80,216,144,.18)!important;background:linear-gradient(180deg,rgba(80,216,144,.06),rgba(80,216,144,.03))!important}
-.xi-loading{background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important}
-.xi-input{width:100%!important;box-sizing:border-box!important;margin:0 0 8px 0!important;padding:10px 12px!important;border-radius:10px!important;border:1px solid rgba(255,255,255,.08)!important;background:rgba(0,0,0,.16)!important;color:#ecfbff!important;font-size:12px!important}
-.xi-textarea{width:100%!important;min-height:88px!important;resize:vertical!important;box-sizing:border-box!important;margin:0 0 8px 0!important;padding:10px 12px!important;border-radius:10px!important;border:1px solid rgba(255,255,255,.08)!important;background:rgba(0,0,0,.16)!important;color:#ecfbff!important;font-size:12px!important}
-.xi-help-list{display:grid!important;gap:8px!important}
-.xi-help-item{padding:9px 10px!important;border-radius:10px!important;background:rgba(0,0,0,.12)!important;border:1px solid rgba(255,255,255,.04)!important;font-size:12px!important;color:#d8eff4!important;line-height:1.45!important}
-.xi-label{display:block!important;font-size:11px!important;color:#9fc0c7!important;margin:0 0 6px 0!important}
-.xi-history-empty{font-size:12px!important;color:#8fb5bd!important;padding:8px 2px!important}
-.xi-history-item{padding:10px!important;border-radius:12px!important;background:rgba(0,0,0,.12)!important;border:1px solid rgba(255,255,255,.04)!important;margin-bottom:8px!important}
-.xi-history-top{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;margin-bottom:8px!important}
-.xi-history-title{font-size:12px!important;font-weight:800!important;color:#eafcff!important}
-.xi-history-status{font-size:10px!important;font-weight:800!important;padding:4px 8px!important;border-radius:999px!important}
-.xi-history-status.pending{color:#fff5d8!important;background:rgba(242,193,78,.14)!important;border:1px solid rgba(242,193,78,.20)!important}
-.xi-history-status.approved{color:#eafff4!important;background:rgba(80,216,144,.14)!important;border:1px solid rgba(80,216,144,.20)!important}
-.xi-history-status.denied{color:#ffe6e6!important;background:rgba(255,107,107,.14)!important;border:1px solid rgba(255,107,107,.20)!important}
-.xi-history-status.paid{color:#e8fff9!important;background:rgba(72,199,217,.14)!important;border:1px solid rgba(72,199,217,.20)!important}
-.xi-history-meta{display:grid!important;gap:6px!important}
-.xi-history-meta-row{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;font-size:11px!important;color:#b7d4da!important}
-@media (max-width:520px){#xi-overlay{top:60px!important;right:8px!important;left:8px!important;width:auto!important;max-height:calc(100vh - 72px)!important}#xi-tabs{grid-template-columns:1fr 1fr!important}.xi-grid{grid-template-columns:1fr!important}}
+.xi-card{
+    margin-bottom:12px!important;
+    border-radius:14px!important;
+    border:1px solid rgba(255,255,255,.06)!important;
+    background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important;
+    padding:12px!important;
+}
+.xi-card-title{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:10px!important;
+    margin-bottom:10px!important;
+}
+.xi-card-title strong{
+    font-size:13px!important;
+    color:#ecfbff!important;
+}
+.xi-mini-badge{
+    display:inline-flex!important;
+    align-items:center!important;
+    padding:4px 8px!important;
+    border-radius:999px!important;
+    font-size:10px!important;
+    font-weight:800!important;
+    color:#c9fbff!important;
+    background:rgba(72,199,217,.12)!important;
+    border:1px solid rgba(72,199,217,.18)!important;
+}
+.xi-mini-badge.active{
+    color:#eafff4!important;
+    background:rgba(80,216,144,.14)!important;
+    border:1px solid rgba(80,216,144,.20)!important;
+}
+.xi-mini-badge.inactive{
+    color:#ffe6e6!important;
+    background:rgba(255,107,107,.14)!important;
+    border:1px solid rgba(255,107,107,.20)!important;
+}
+.xi-mini-badge.pending{
+    color:#fff5d8!important;
+    background:rgba(242,193,78,.14)!important;
+    border:1px solid rgba(242,193,78,.20)!important;
+}
+.xi-grid{
+    display:grid!important;
+    grid-template-columns:1fr 1fr!important;
+    gap:10px!important;
+}
+.xi-stat{
+    border-radius:12px!important;
+    background:rgba(0,0,0,.14)!important;
+    border:1px solid rgba(255,255,255,.05)!important;
+    padding:10px!important;
+}
+.xi-stat-label{
+    font-size:11px!important;
+    color:#9fc0c7!important;
+    margin-bottom:5px!important;
+}
+.xi-stat-value{
+    font-size:15px!important;
+    font-weight:800!important;
+    color:#f1fdff!important;
+}
+.xi-list{
+    display:grid!important;
+    gap:8px!important;
+}
+.xi-list-row{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:8px!important;
+    padding:8px 10px!important;
+    border-radius:10px!important;
+    background:rgba(0,0,0,.12)!important;
+    border:1px solid rgba(255,255,255,.04)!important;
+}
+.xi-list-left{
+    font-size:12px!important;
+    color:#dff4f8!important;
+}
+.xi-list-right{
+    font-size:11px!important;
+    color:#8fb5bd!important;
+    text-align:right!important;
+}
+.xi-actions{
+    display:flex!important;
+    gap:8px!important;
+    flex-wrap:wrap!important;
+}
+.xi-btn{
+    appearance:none!important;
+    border:1px solid rgba(255,255,255,.08)!important;
+    border-radius:12px!important;
+    padding:10px 12px!important;
+    font-size:12px!important;
+    font-weight:800!important;
+    cursor:pointer!important;
+}
+.xi-btn.primary{
+    color:#ecfeff!important;
+    background:linear-gradient(180deg,#1f94a8 0%,#12697a 100%)!important;
+}
+.xi-btn.success{
+    color:#effff6!important;
+    background:linear-gradient(180deg,#39b47d 0%,#268961 100%)!important;
+}
+.xi-btn.danger{
+    color:#fff4f4!important;
+    background:linear-gradient(180deg,#c95e5e 0%,#a34141 100%)!important;
+}
+.xi-btn.ghost{
+    color:#d7eef3!important;
+    background:rgba(255,255,255,.04)!important;
+}
+.xi-btn.disabled{
+    opacity:.45!important;
+    pointer-events:none!important;
+    filter:grayscale(.2)!important;
+}
+.xi-note{
+    margin-top:8px!important;
+    font-size:11px!important;
+    color:#8fb5bd!important;
+    line-height:1.45!important;
+}
+.xi-loading,.xi-error,.xi-success{
+    padding:12px 14px!important;
+    border-radius:12px!important;
+    border:1px solid rgba(255,255,255,.06)!important;
+    font-size:12px!important;
+}
+.xi-error{
+    color:#ffd3d3!important;
+    border-color:rgba(255,107,107,.18)!important;
+    background:linear-gradient(180deg,rgba(255,107,107,.06),rgba(255,107,107,.03))!important;
+}
+.xi-success{
+    color:#eafff4!important;
+    border-color:rgba(80,216,144,.18)!important;
+    background:linear-gradient(180deg,rgba(80,216,144,.06),rgba(80,216,144,.03))!important;
+}
+.xi-loading{
+    background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015))!important;
+}
+.xi-input{
+    width:100%!important;
+    box-sizing:border-box!important;
+    margin:0 0 8px 0!important;
+    padding:10px 12px!important;
+    border-radius:10px!important;
+    border:1px solid rgba(255,255,255,.08)!important;
+    background:rgba(0,0,0,.16)!important;
+    color:#ecfbff!important;
+    font-size:12px!important;
+}
+.xi-textarea{
+    width:100%!important;
+    min-height:88px!important;
+    resize:vertical!important;
+    box-sizing:border-box!important;
+    margin:0 0 8px 0!important;
+    padding:10px 12px!important;
+    border-radius:10px!important;
+    border:1px solid rgba(255,255,255,.08)!important;
+    background:rgba(0,0,0,.16)!important;
+    color:#ecfbff!important;
+    font-size:12px!important;
+}
+.xi-help-list{
+    display:grid!important;
+    gap:8px!important;
+}
+.xi-help-item{
+    padding:9px 10px!important;
+    border-radius:10px!important;
+    background:rgba(0,0,0,.12)!important;
+    border:1px solid rgba(255,255,255,.04)!important;
+    font-size:12px!important;
+    color:#d8eff4!important;
+    line-height:1.45!important;
+}
+.xi-label{
+    display:block!important;
+    font-size:11px!important;
+    color:#9fc0c7!important;
+    margin:0 0 6px 0!important;
+}
+.xi-history-empty{
+    font-size:12px!important;
+    color:#8fb5bd!important;
+    padding:8px 2px!important;
+}
+.xi-history-item{
+    padding:10px!important;
+    border-radius:12px!important;
+    background:rgba(0,0,0,.12)!important;
+    border:1px solid rgba(255,255,255,.04)!important;
+    margin-bottom:8px!important;
+}
+.xi-history-top{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:8px!important;
+    margin-bottom:8px!important;
+}
+.xi-history-title{
+    font-size:12px!important;
+    font-weight:800!important;
+    color:#eafcff!important;
+}
+.xi-history-status{
+    font-size:10px!important;
+    font-weight:800!important;
+    padding:4px 8px!important;
+    border-radius:999px!important;
+}
+.xi-history-status.pending{
+    color:#fff5d8!important;
+    background:rgba(242,193,78,.14)!important;
+    border:1px solid rgba(242,193,78,.20)!important;
+}
+.xi-history-status.approved{
+    color:#eafff4!important;
+    background:rgba(80,216,144,.14)!important;
+    border:1px solid rgba(80,216,144,.20)!important;
+}
+.xi-history-status.denied{
+    color:#ffe6e6!important;
+    background:rgba(255,107,107,.14)!important;
+    border:1px solid rgba(255,107,107,.20)!important;
+}
+.xi-history-status.paid{
+    color:#e8fff9!important;
+    background:rgba(72,199,217,.14)!important;
+    border:1px solid rgba(72,199,217,.20)!important;
+}
+.xi-history-meta{
+    display:grid!important;
+    gap:6px!important;
+}
+.xi-history-meta-row{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:space-between!important;
+    gap:8px!important;
+    font-size:11px!important;
+    color:#b7d4da!important;
+}
+@media (max-width:520px){
+    #xi-headerbar{
+        top:52px!important;
+        height:52px!important;
+    }
+    #xi-headerbar-inner{
+        width:calc(100vw - 12px)!important;
+        height:42px!important;
+        padding:0 8px!important;
+    }
+    #xi-headerbar-right{
+        display:none!important;
+    }
+    #xi-overlay{
+        top:110px!important;
+        right:8px!important;
+        left:8px!important;
+        width:auto!important;
+        max-height:calc(100vh - 128px)!important;
+    }
+    #xi-tabs{
+        grid-template-columns:1fr 1fr!important;
+    }
+    .xi-grid{
+        grid-template-columns:1fr!important;
+    }
+}
         `);
     }
 
@@ -171,63 +603,48 @@
         return 'inactive';
     }
 
-    function ensurePlans(callback) {
-        if (plansCache) return callback(null, plansCache);
-        apiGet('/api/insurance/plans', function (err, data) {
-            if (err) return callback(err);
-            if (!data || !data.ok || !Array.isArray(data.plans)) return callback(new Error('Invalid plans response'));
-            plansCache = data.plans;
-            callback(null, plansCache);
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function apiGet(path, callback) {
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: API_BASE + path,
+            timeout: 20000,
+            headers: headers(),
+            onload: function (res) {
+                try { callback(null, JSON.parse(res.responseText)); }
+                catch (e) { callback(new Error('Bad JSON')); }
+            },
+            onerror: function () { callback(new Error('Request failed')); },
+            ontimeout: function () { callback(new Error('Timed out')); }
         });
     }
 
-    function getPlan(planKey) {
-        return (plansCache || []).find(function (p) { return p.plan_key === planKey; }) || null;
-    }
-
-    function loadAdminClaims(callback) {
-        if (!auth.member || !auth.member.is_admin) return callback();
-        apiGet('/api/insurance/admin/claims', function (err, data) {
-            if (!err && data && data.ok && Array.isArray(data.claims)) adminClaimsCache = data.claims;
-            callback();
-        });
-    }
-
-    function loadAdminPayouts(callback) {
-        if (!auth.member || !auth.member.is_admin) return callback();
-        apiGet('/api/insurance/admin/payouts', function (err, data) {
-            if (!err && data && data.ok && Array.isArray(data.payouts)) adminPayoutsCache = data.payouts;
-            callback();
-        });
-    }
-
-    function verifyLoginFromSettings() {
-        var input = document.getElementById('xi-api-key-input');
-        var key = input ? String(input.value || '').trim() : '';
-        if (!key) {
-            setNotice('error', 'Please enter your API key.');
-            return;
-        }
-
-        auth.api_key = key;
-        setNotice('loading', 'Verifying faction access...');
-
-        apiPost('/api/insurance/auth/verify', { api_key: auth.api_key }, function (err, data) {
-            if (err) return setNotice('error', 'Login failed.');
-            if (!data || !data.ok) return setNotice('error', (data && data.error) || 'Login failed.');
-
-            auth.session_token = data.session_token || '';
-            auth.member = data.member || null;
-            saveAuth();
-            setNotice('success', 'Login successful.');
-            renderBody();
+    function apiPost(path, payload, callback) {
+        GM_xmlhttpRequest({
+            method: 'POST',
+            url: API_BASE + path,
+            timeout: 20000,
+            headers: headers({ 'Content-Type': 'application/json' }),
+            data: JSON.stringify(payload || {}),
+            onload: function (res) {
+                try { callback(null, JSON.parse(res.responseText)); }
+                catch (e) { callback(new Error('Bad JSON')); }
+            },
+            onerror: function () { callback(new Error('Request failed')); },
+            ontimeout: function () { callback(new Error('Timed out')); }
         });
     }
 
     function renderMemberCard(me) {
         var member = (me && me.member) || auth.member || {};
-        var badges = `<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>`;
-        if (member.is_admin) badges += `<span class="xi-badge admin">Admin</span>`;
+        var badges = '<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>';
+        if (member.is_admin) badges += '<span class="xi-badge admin">Admin</span>';
         var badgesHost = document.getElementById('xi-badges');
         if (badgesHost) badgesHost.innerHTML = badges;
 
@@ -471,8 +888,8 @@ ${claimsRows}
 
     function renderSettingsTab() {
         var member = auth.member || null;
-        var badges = `<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>`;
-        if (member && member.is_admin) badges += `<span class="xi-badge admin">Admin</span>`;
+        var badges = '<span class="xi-badge faction">Faction Only</span><span class="xi-badge covered">Medical Cover</span>';
+        if (member && member.is_admin) badges += '<span class="xi-badge admin">Admin</span>';
         var badgesHost = document.getElementById('xi-badges');
         if (badgesHost) badgesHost.innerHTML = badges;
 
@@ -516,6 +933,29 @@ ${member ? `
     </div>
 </div>` : ''}
 `;
+    }
+
+    function verifyLoginFromSettings() {
+        var input = document.getElementById('xi-api-key-input');
+        var key = input ? String(input.value || '').trim() : '';
+        if (!key) {
+            setNotice('error', 'Please enter your API key.');
+            return;
+        }
+
+        auth.api_key = key;
+        setNotice('loading', 'Verifying faction access...');
+
+        apiPost('/api/insurance/auth/verify', { api_key: auth.api_key }, function (err, data) {
+            if (err) return setNotice('error', 'Login failed.');
+            if (!data || !data.ok) return setNotice('error', (data && data.error) || 'Login failed.');
+
+            auth.session_token = data.session_token || '';
+            auth.member = data.member || null;
+            saveAuth();
+            setNotice('success', 'Login successful.');
+            renderBody();
+        });
     }
 
     function renderBody() {
@@ -706,12 +1146,32 @@ ${member ? `
     }
 
     function createLauncher() {
-        if (document.getElementById('xi-pill-launcher')) return;
-        var launcher = document.createElement('div');
-        launcher.id = 'xi-pill-launcher';
-        launcher.innerHTML = pillSvg() + '<div class="xi-plus-badge">+</div>';
-        launcher.addEventListener('click', toggleOverlay);
-        document.body.appendChild(launcher);
+        if (document.getElementById('xi-headerbar')) return;
+
+        var bar = document.createElement('div');
+        bar.id = 'xi-headerbar';
+        bar.innerHTML = `
+            <div id="xi-headerbar-inner">
+                <div id="xi-headerbar-left">
+                    <div id="xi-headerbar-icon" title="Faction Xanax Insurance">
+                        ${pillSvg()}
+                    </div>
+                    <div id="xi-headerbar-titlewrap">
+                        <div id="xi-headerbar-title">Faction Xanax Insurance</div>
+                        <div id="xi-headerbar-sub">Medical cover for faction members</div>
+                    </div>
+                </div>
+                <div id="xi-headerbar-right">
+                    <span class="xi-header-chip">Faction Only</span>
+                    <span class="xi-header-chip">Overlay</span>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(bar);
+
+        var icon = bar.querySelector('#xi-headerbar-icon');
+        if (icon) icon.addEventListener('click', toggleOverlay);
     }
 
     function createOverlay() {
