@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner’s Insurance
 // @namespace    fries91-xanax-insurance
-// @version      2.0.1
+// @version      2.0.0
 // @description  Medical-style faction Xanax insurance overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -87,43 +87,51 @@
         GM_addStyle(`
 #xi-fab{
     position:fixed!important;
-    right:118px!important;
-    bottom:78px!important;
-    top:auto!important;
-    width:44px!important;
-    height:44px!important;
-    border-radius:14px!important;
+    z-index:2147483647!important;
+    width:36px!important;
+    height:36px!important;
+    border-radius:10px!important;
     display:flex!important;
     align-items:center!important;
     justify-content:center!important;
+    font-size:18px!important;
+    line-height:1!important;
     cursor:pointer!important;
-    z-index:2147483645!important;
-    border:1px solid rgba(120,220,240,.28)!important;
-    background:
-        radial-gradient(circle at 30% 25%,rgba(255,255,255,.18),transparent 35%),
-        linear-gradient(180deg,#102a35 0%,#0a171d 100%)!important;
-    box-shadow:
-        0 8px 18px rgba(0,0,0,.32),
-        0 0 0 1px rgba(72,199,217,.10),
-        0 0 14px rgba(72,199,217,.12)!important;
+    user-select:none!important;
+    -webkit-user-select:none!important;
+    -webkit-touch-callout:none!important;
+    -webkit-tap-highlight-color:transparent!important;
+    touch-action:none!important;
+    box-shadow:0 8px 24px rgba(0,0,0,.45)!important;
+    border:1px solid rgba(255,255,255,.10)!important;
+    background:radial-gradient(circle at 30% 20%, rgba(72,199,217,.98), rgba(16,90,110,.98) 55%, rgba(8,38,46,.98))!important;
+    color:#fff!important;
+    left:auto!important;
+    right:14px!important;
+    top:calc(50% - 54px)!important;
+    bottom:auto!important;
+    transform:translateY(-50%)!important;
+    opacity:1!important;
+    visibility:visible!important;
+    pointer-events:auto!important;
+    appearance:none!important;
+    -webkit-appearance:none!important;
 }
 #xi-fab .xi-pill-svg{
-    width:24px!important;
-    height:24px!important;
+    width:20px!important;
+    height:20px!important;
     display:block!important;
 }
-#xi-fab:active{
-    transform:scale(.98)!important;
-}
-
 #xi-overlay{
     position:fixed!important;
-    right:10px!important;
-    bottom:132px!important;
-    top:auto!important;
-    width:400px!important;
-    max-width:calc(100vw - 20px)!important;
-    max-height:calc(100vh - 154px)!important;
+    left:8px!important;
+    right:8px!important;
+    top:8px!important;
+    bottom:8px!important;
+    width:auto!important;
+    max-width:520px!important;
+    max-height:none!important;
+    margin:0 auto!important;
     overflow:hidden!important;
     z-index:2147483646!important;
     border-radius:18px!important;
@@ -1089,8 +1097,7 @@ ${member ? `
         var oldHeader = document.getElementById('xi-headerbar');
         if (oldHeader) oldHeader.remove();
 
-        var existing = document.getElementById('xi-fab');
-        if (existing) return;
+        if (document.getElementById('xi-fab')) return;
 
         var fab = document.createElement('button');
         fab.id = 'xi-fab';
@@ -1181,8 +1188,10 @@ ${member ? `
     function mount() {
         if (!document.body) return false;
         addStyles();
+
         var oldHeader = document.getElementById('xi-headerbar');
         if (oldHeader) oldHeader.remove();
+
         if (!document.getElementById('xi-fab')) createLauncher();
         if (!document.getElementById('xi-overlay')) createOverlay();
         return true;
@@ -1195,8 +1204,8 @@ ${member ? `
         var timer = setInterval(function () {
             tries += 1;
             mount();
-            if (tries > 60) clearInterval(timer);
-        }, 600);
+            if (tries > 90) clearInterval(timer);
+        }, 700);
 
         var remountTimer = null;
         var observer = new MutationObserver(function () {
@@ -1219,6 +1228,7 @@ ${member ? `
         setTimeout(mount, 300);
         setTimeout(mount, 1200);
         setTimeout(mount, 2500);
+        setTimeout(mount, 5000);
     }
 
     boot();
