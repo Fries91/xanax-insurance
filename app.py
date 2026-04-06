@@ -1,5 +1,7 @@
 import os
 import secrets
+from datetime import datetime, timezone
+
 import requests
 from flask import Flask, jsonify, request
 
@@ -32,6 +34,59 @@ TORN_API_TIMEOUT = 20
 
 def api_error(message, status=400):
     return jsonify({"ok": False, "error": message}), status
+
+
+def normalize_dt(value):
+    if not value:
+        return None
+
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+
+        parsed = None
+        candidates = [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S.%f",
+        ]
+        for fmt in candidates:
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return text
+
+        dt = parsed
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def serialize_claim(claim):
+    if not claim:
+        return claim
+
+    row = dict(claim)
+    row["created_at"] = normalize_dt(row.get("created_at"))
+    row["reviewed_at"] = normalize_dt(row.get("reviewed_at"))
+    return row
+
+
+def serialize_claims(claims):
+    return [serialize_claim(c) for c in (claims or [])]
 
 
 def get_session_member():
@@ -185,7 +240,7 @@ def insurance_me():
             "is_admin": bool(member.get("is_admin", 0)),
         },
         "enrollment": enrollment,
-        "claims": claims
+        "claims": serialize_claims(claims)
     })
 
 
@@ -268,7 +323,7 @@ def insurance_admin_claims():
             "torn_id": member["torn_id"],
             "name": member["name"]
         },
-        "claims": get_all_claims()
+        "claims": serialize_claims(get_all_claims())
     })
 
 
