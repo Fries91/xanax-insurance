@@ -24,6 +24,8 @@ def init_db():
         payout_amount INTEGER NOT NULL DEFAULT 0,
         min_count INTEGER NOT NULL DEFAULT 1,
         max_count INTEGER NOT NULL DEFAULT 1,
+        cooldown_hours INTEGER NOT NULL DEFAULT 0,
+        max_pending_claims INTEGER NOT NULL DEFAULT 1,
         is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -82,16 +84,46 @@ def seed_plans():
     cur = conn.cursor()
 
     plans = [
-        ("xanax_stack", "Xanax Stack", "Coverage for a full 4-stack of Xanax", 1000000, 4000000, 4, 4),
-        ("jump_1_4", "1–4 Jumps", "Coverage for 1 to 4 jump sizes", 250000, 1000000, 1, 4),
-        ("xanax_only", "Single Xanax", "Coverage for a single Xanax use", 100000, 400000, 1, 1),
+        (
+            "xanax_stack",
+            "Xanax Stack",
+            "Coverage for a full 4-stack of Xanax",
+            1000000,
+            4000000,
+            4,
+            4,
+            72,
+            1,
+        ),
+        (
+            "jump_1_4",
+            "1–4 Jumps",
+            "Coverage for 1 to 4 jump sizes",
+            250000,
+            1000000,
+            1,
+            4,
+            48,
+            1,
+        ),
+        (
+            "xanax_only",
+            "Single Xanax",
+            "Coverage for a single Xanax use",
+            100000,
+            400000,
+            1,
+            1,
+            24,
+            1,
+        ),
     ]
 
     for plan in plans:
         cur.execute("""
         INSERT OR IGNORE INTO insurance_plans
-        (plan_key, title, description, premium_amount, payout_amount, min_count, max_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (plan_key, title, description, premium_amount, payout_amount, min_count, max_count, cooldown_hours, max_pending_claims)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, plan)
 
     conn.commit()
@@ -276,6 +308,30 @@ def get_all_claims():
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_pending_claim_count(torn_id, plan_key):
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT COUNT(*) AS total
+        FROM insurance_claims
+        WHERE torn_id = ? AND plan_key = ? AND status = 'pending'
+    """, (torn_id, plan_key)).fetchone()
+    conn.close()
+    return int(row["total"] if row else 0)
+
+
+def get_latest_claim_for_plan(torn_id, plan_key):
+    conn = get_conn()
+    row = conn.execute("""
+        SELECT *
+        FROM insurance_claims
+        WHERE torn_id = ? AND plan_key = ?
+        ORDER BY datetime(created_at) DESC, id DESC
+        LIMIT 1
+    """, (torn_id, plan_key)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def set_claim_status(claim_id, status, reviewed_by):
