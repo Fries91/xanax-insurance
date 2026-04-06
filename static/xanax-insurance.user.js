@@ -18,6 +18,9 @@
 (function () {
     'use strict';
 
+    if (window.__XI_V210__ && document.getElementById('xi-fab')) return;
+    window.__XI_V210__ = true;
+
     var API_BASE = 'https://xanax-insurance.onrender.com';
     var currentTab = 'xanax_stack';
     var overlayOpen = false;
@@ -161,11 +164,9 @@
     justify-content:center!important;
     background:linear-gradient(180deg,#14323d 0%,#0b1a22 100%)!important;
     border:1px solid rgba(137,228,242,.24)!important;
-}
-#xi-brand-icon svg{
-    width:22px!important;
-    height:22px!important;
-    display:block!important;
+    font-size:20px!important;
+    line-height:1!important;
+    color:#fff!important;
 }
 #xi-title{
     font-size:16px!important;
@@ -1086,38 +1087,22 @@ ${member ? `
         });
     }
 
-
-    function pillSvg() {
-        return ''
-            + '<svg class="xi-pill-svg" viewBox="0 0 24 24" aria-hidden="true">'
-            + '<defs>'
-            + '<linearGradient id="xi-pill-grad" x1="0%" y1="0%" x2="100%" y2="100%">'
-            + '<stop offset="0%" stop-color="#ffffff"/>'
-            + '<stop offset="100%" stop-color="#d9f6ff"/>'
-            + '</linearGradient>'
-            + '</defs>'
-            + '<g transform="rotate(-35 12 12)">'
-            + '<rect x="4" y="8" width="16" height="8" rx="4" fill="url(#xi-pill-grad)" opacity="0.96"></rect>'
-            + '<path d="M12 8 L12 16" stroke="#0f2c35" stroke-width="1.2" opacity="0.65"></path>'
-            + '<path d="M6.5 12 H11.8" stroke="#0f2c35" stroke-width="1.2" opacity="0.45"></path>'
-            + '</g>'
-            + '</svg>';
-    }
-
     function createLauncher() {
         var oldHeader = document.getElementById('xi-headerbar');
         if (oldHeader) oldHeader.remove();
 
-        if (document.getElementById('xi-fab')) return;
+        var existing = document.getElementById('xi-fab');
+        if (existing) return existing;
 
         var fab = document.createElement('div');
         fab.id = 'xi-fab';
         fab.textContent = '💊';
-        fab.setAttribute('aria-label', 'Open Sinner’s Insurance');
         fab.setAttribute('title', 'Sinner’s Insurance');
+        fab.setAttribute('aria-label', 'Sinner’s Insurance');
 
         document.body.appendChild(fab);
         fab.addEventListener('click', toggleOverlay);
+        return fab;
     }
 
     function createOverlay() {
@@ -1207,22 +1192,32 @@ ${member ? `
         return true;
     }
 
-    function boot() {
-        mount();
-
-        var tries = 0;
-        var timer = setInterval(function () {
-            tries += 1;
+    function ensureMounted() {
+        if (!document.body) return;
+        var hasFab = !!document.getElementById('xi-fab');
+        var hasOverlay = !!document.getElementById('xi-overlay');
+        if (!hasFab || !hasOverlay) {
             mount();
-            if (tries > 90) clearInterval(timer);
-        }, 700);
+        }
+    }
 
-        var remountTimer = null;
+    function startRemountWatch() {
+        setInterval(function () {
+            try {
+                if (!document.body) return;
+                if (!document.getElementById('xi-fab') || !document.getElementById('xi-overlay')) {
+                    ensureMounted();
+                }
+            } catch (_err) {}
+        }, 2000);
+    }
+
+    function boot() {
+        ensureMounted();
+        startRemountWatch();
+
         var observer = new MutationObserver(function () {
-            if (remountTimer) clearTimeout(remountTimer);
-            remountTimer = setTimeout(function () {
-                mount();
-            }, 120);
+            ensureMounted();
         });
 
         observer.observe(document.documentElement || document.body, {
@@ -1230,15 +1225,15 @@ ${member ? `
             subtree: true
         });
 
-        window.addEventListener('load', mount);
-        window.addEventListener('hashchange', mount);
-        window.addEventListener('popstate', mount);
-        document.addEventListener('readystatechange', mount);
+        window.addEventListener('load', ensureMounted);
+        window.addEventListener('hashchange', ensureMounted);
+        window.addEventListener('popstate', ensureMounted);
+        document.addEventListener('readystatechange', ensureMounted);
 
-        setTimeout(mount, 300);
-        setTimeout(mount, 1200);
-        setTimeout(mount, 2500);
-        setTimeout(mount, 5000);
+        setTimeout(ensureMounted, 300);
+        setTimeout(ensureMounted, 1200);
+        setTimeout(ensureMounted, 2500);
+        setTimeout(ensureMounted, 5000);
     }
 
     boot();
