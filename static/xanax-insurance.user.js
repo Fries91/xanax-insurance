@@ -433,81 +433,19 @@
     function applyShieldPos() {
         if (!shield) return;
         if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
-        var vp = getViewport();
-        var defaultPos = { left: Math.max(8, vp.w - 50), top: Math.max(72, Math.round(vp.h * 0.45)) };
-        var pos = loadPos(K_SHIELD_POS, defaultPos);
-        var maxLeft = Math.max(8, vp.w - 44);
-        var maxTop = Math.max(8, vp.h - 44);
-        pos.left = Math.min(Math.max(8, Math.round(Number(pos.left || defaultPos.left))), maxLeft);
-        pos.top = Math.min(Math.max(8, Math.round(Number(pos.top || defaultPos.top))), maxTop);
-        shield.style.left = pos.left + 'px';
-        shield.style.top = pos.top + 'px';
-        shield.style.right = 'auto';
-        shield.style.bottom = 'auto';
+        shield.style.left = 'auto';
+        shield.style.right = '14px';
+        shield.style.top = 'auto';
+        shield.style.bottom = '84px';
         shield.style.transform = 'none';
     }
 
     function makeShieldDraggable() {
         if (!shield || shield.__warinsDragBound) return;
         shield.__warinsDragBound = true;
-
-        var dragging = false;
-        var startX = 0, startY = 0, startLeft = 0, startTop = 0;
-        var moved = false;
-        var THRESHOLD = 6;
-
-        function point(ev) {
-            if (ev.touches && ev.touches.length) return ev.touches[0];
-            if (ev.changedTouches && ev.changedTouches.length) return ev.changedTouches[0];
-            return ev;
-        }
-
-        function onDown(ev) {
-            var p = point(ev);
-            dragging = true;
-            moved = false;
-            startX = Number(p.clientX || 0);
-            startY = Number(p.clientY || 0);
-            var rect = shield.getBoundingClientRect();
-            startLeft = rect.left;
-            startTop = rect.top;
-            if (ev.cancelable) ev.preventDefault();
-            ev.stopPropagation();
-        }
-
-        function onMove(ev) {
-            if (!dragging) return;
-            var p = point(ev);
-            var dx = Number(p.clientX || 0) - startX;
-            var dy = Number(p.clientY || 0) - startY;
-            if (!moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) moved = true;
-            if (!moved) return;
-            var vp = getViewport();
-            var left = Math.min(Math.max(8, Math.round(startLeft + dx)), Math.max(8, vp.w - 44));
-            var top = Math.min(Math.max(8, Math.round(startTop + dy)), Math.max(8, vp.h - 44));
-            shield.style.left = left + 'px';
-            shield.style.top = top + 'px';
-            shield.style.right = 'auto';
-            shield.style.bottom = 'auto';
-            shield.style.transform = 'none';
-            if (ev.cancelable) ev.preventDefault();
-        }
-
-        function onUp(ev) {
-            if (!dragging) return;
-            dragging = false;
-            var rect = shield.getBoundingClientRect();
-            savePos(K_SHIELD_POS, { left: rect.left, top: rect.top });
-            if (!moved) toggleOverlay();
-            if (ev && ev.cancelable) ev.preventDefault();
-        }
-
-        shield.addEventListener('mousedown', onDown);
-        shield.addEventListener('touchstart', onDown, { passive: false });
-        window.addEventListener('mousemove', onMove, { passive: false });
-        window.addEventListener('touchmove', onMove, { passive: false });
-        window.addEventListener('mouseup', onUp, { passive: false });
-        window.addEventListener('touchend', onUp, { passive: false });
+        shield.addEventListener('click', function () {
+            toggleOverlay();
+        });
     }
 
     function isLoggedIn() {
@@ -1085,11 +1023,7 @@
             applyShieldPos();
         });
 
-        if (shield) {
-            shield.addEventListener('click', function () {
-                setOverlayOpen(!state.isOpen);
-            });
-        }
+
     }
 
     boot();
