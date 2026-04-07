@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Minimal Header
 // @namespace    fries91-xanax-insurance
-// @version      2.0.0
-// @description  Minimal 7 Deadly Sins themed Torn launcher bar with one centered button and themed overlay
+// @version      2.1.0
+// @description  Minimal 7 Deadly Sins themed Torn top-bar button with one centered button and themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @run-at       document-idle
@@ -24,12 +24,12 @@
   position: fixed !important;
   left: 0 !important;
   right: 0 !important;
-  bottom: 72px !important;
+  top: env(safe-area-inset-top, 0px) !important;
+  height: 78px !important;
   z-index: 2147483647 !important;
   display: flex !important;
   justify-content: center !important;
-  align-items: center !important;
-  padding: 0 10px !important;
+  align-items: flex-start !important;
   box-sizing: border-box !important;
   pointer-events: none !important;
 }
@@ -37,38 +37,39 @@
   pointer-events: auto !important;
   appearance: none !important;
   -webkit-appearance: none !important;
-  width: min(360px, calc(100vw - 112px)) !important;
-  min-width: 220px !important;
-  height: 34px !important;
-  padding: 0 14px !important;
-  border-radius: 10px !important;
-  border: 1px solid rgba(205, 164, 74, .58) !important;
+  position: absolute !important;
+  top: 40px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 164px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(205, 164, 74, .46) !important;
   background:
-    linear-gradient(180deg, rgba(85, 14, 15, .96), rgba(34, 5, 7, .98)) !important;
+    linear-gradient(180deg, rgba(82, 10, 14, .88), rgba(44, 6, 9, .92)) !important;
   box-shadow:
-    0 0 0 1px rgba(255,255,255,.04) inset,
-    0 10px 22px rgba(0,0,0,.34),
-    0 0 18px rgba(164, 17, 23, .22) !important;
+    0 0 0 1px rgba(255,255,255,.03) inset,
+    0 6px 16px rgba(0,0,0,.22),
+    0 0 12px rgba(164, 17, 23, .12) !important;
   color: #f3df9c !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 8px !important;
+  gap: 6px !important;
   text-align: center !important;
-  font-size: 13px !important;
+  font-size: 11px !important;
   font-weight: 800 !important;
-  letter-spacing: .35px !important;
-  text-transform: uppercase !important;
+  letter-spacing: .15px !important;
   white-space: nowrap !important;
   cursor: pointer !important;
-  position: relative !important;
   overflow: hidden !important;
 }
 #si-7ds-launcher-btn::before {
   content: '' !important;
   position: absolute !important;
   inset: 0 !important;
-  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 38%, rgba(0,0,0,.18)) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0) 38%, rgba(0,0,0,.14)) !important;
   pointer-events: none !important;
 }
 #si-7ds-launcher-btn::after {
@@ -77,18 +78,18 @@
   left: 8px !important;
   right: 8px !important;
   bottom: 0 !important;
-  height: 2px !important;
-  background: linear-gradient(90deg, rgba(176,27,35,0), rgba(176,27,35,.95), rgba(222,185,90,.95), rgba(176,27,35,.95), rgba(176,27,35,0)) !important;
+  height: 1px !important;
+  background: linear-gradient(90deg, rgba(176,27,35,0), rgba(222,185,90,.9), rgba(176,27,35,0)) !important;
   opacity: .95 !important;
   pointer-events: none !important;
 }
 #si-7ds-launcher-btn:active {
-  transform: translateY(1px) !important;
+  transform: translateX(-50%) translateY(1px) !important;
 }
 #si-7ds-launcher-btn .si-7ds-icon {
-  font-size: 14px !important;
+  font-size: 11px !important;
   line-height: 1 !important;
-  filter: drop-shadow(0 0 5px rgba(232, 196, 102, .28)) !important;
+  filter: drop-shadow(0 0 4px rgba(232, 196, 102, .24)) !important;
 }
 #si-7ds-overlay-backdrop {
   position: fixed !important;
@@ -107,7 +108,7 @@
   left: 10px !important;
   right: 10px !important;
   top: 84px !important;
-  bottom: 118px !important;
+  bottom: 96px !important;
   width: auto !important;
   max-width: 540px !important;
   margin: 0 auto !important;
@@ -228,22 +229,18 @@
   text-transform: uppercase !important;
 }
 @media (max-width: 520px) {
-  #si-7ds-launcher {
-    bottom: 70px !important;
-    padding: 0 8px !important;
-  }
   #si-7ds-launcher-btn {
-    width: min(330px, calc(100vw - 106px)) !important;
-    min-width: 200px !important;
-    height: 32px !important;
-    font-size: 12px !important;
-    gap: 6px !important;
+    top: 41px !important;
+    width: 166px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+    gap: 5px !important;
   }
   #si-7ds-overlay {
     left: 8px !important;
     right: 8px !important;
-    top: 76px !important;
-    bottom: 112px !important;
+    top: 80px !important;
+    bottom: 92px !important;
     max-width: none !important;
   }
 }
@@ -310,14 +307,14 @@
             + '<div class="si-7ds-body">'
             +   '<div class="si-7ds-card">'
             +     '<div class="si-7ds-card-title">Wrath Shell</div>'
-            +     '<div class="si-7ds-text">This is the clean starter shell only. The launcher stays low on the page in the red-marked area style, and this overlay uses a dark crimson and gold 7 Deadly Sins look.</div>'
+            +     '<div class="si-7ds-text">This is the clean starter shell only. The launcher now sits in the top bar red-marked area and the overlay keeps the same dark crimson and gold 7 Deadly Sins look.</div>'
             +   '</div>'
             +   '<div class="si-7ds-card">'
             +     '<div class="si-7ds-card-title">Ready To Build</div>'
             +     '<div class="si-7ds-pillrow">'
             +       '<span class="si-7ds-pill">No tabs yet</span>'
             +       '<span class="si-7ds-pill">No floating icon</span>'
-            +       '<span class="si-7ds-pill">Launcher only</span>'
+            +       '<span class="si-7ds-pill">Top-bar launcher</span>'
             +     '</div>'
             +   '</div>'
             + '</div>';
