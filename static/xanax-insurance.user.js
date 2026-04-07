@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner’s Insurance
 // @namespace    fries91-xanax-insurance
-// @version      4.0.0
+// @version      4.0.1
 // @description  War Bot style insurance overlay for Torn
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -19,8 +19,8 @@
 (function () {
     'use strict';
 
-    if (window.__SINNERS_INSURANCE_V400__ && document.getElementById('warins-headerbar')) return;
-    window.__SINNERS_INSURANCE_V400__ = true;
+    if (window.__SINNERS_INSURANCE_V401__ && document.getElementById('warins-headerbar')) return;
+    window.__SINNERS_INSURANCE_V401__ = true;
 
     var API_BASE = 'https://xanax-insurance.onrender.com';
 
@@ -422,13 +422,20 @@
         document.head.appendChild(style);
     }
 
-    function findTopAnchorBottom() {
+    function findTopHudBottom() {
         var selectors = [
             '#tcLogo',
             'header',
-            '[class*=\"announcement\"]',
-            '[class*=\"Announce\"]',
-            '[class*=\"banner\"]'
+            '[class*="announcement"]',
+            '[class*="Announce"]',
+            '[class*="banner"]',
+            '[class*="status"]',
+            '[class*="user-information"]',
+            '[class*="bars"]',
+            '[class*="topBar"]',
+            '[class*="top-bar"]',
+            '[class*="sidebarroot"]',
+            '[class*="status-icons"]'
         ];
 
         var maxBottom = 56;
@@ -437,21 +444,76 @@
             document.querySelectorAll(sel).forEach(function (el) {
                 if (!el || !el.getBoundingClientRect) return;
                 var r = el.getBoundingClientRect();
-                if (r.height > 0 && r.bottom > maxBottom && r.top < 220) {
-                    maxBottom = r.bottom;
-                }
+                if (r.height < 18) return;
+                if (r.top > 260) return;
+                if (r.bottom > maxBottom) maxBottom = r.bottom;
             });
         });
 
         return Math.max(56, Math.round(maxBottom));
     }
 
+    function findContentStartTop() {
+        var selectors = [
+            '.content-title',
+            '[class*="content-title"]',
+            '.title-black',
+            '.title-main',
+            'h4',
+            'h5',
+            '#mainContainer > div',
+            '#contentwrapper',
+            '#contentWrapper',
+            '#skip-to-content',
+            '[class*="traveling"]',
+            '[class*="flight"]',
+            '[class*="page-heading"]',
+            '[class*="content-wrapper"]'
+        ];
+
+        var best = Infinity;
+
+        selectors.forEach(function (sel) {
+            document.querySelectorAll(sel).forEach(function (el) {
+                if (!el || !el.getBoundingClientRect) return;
+                var r = el.getBoundingClientRect();
+                if (r.height < 18) return;
+                if (r.width < 120) return;
+                if (r.top < 160 || r.top > 760) return;
+                if (r.top < best) best = r.top;
+            });
+        });
+
+        return isFinite(best) ? Math.round(best) : 0;
+    }
+
+    function getHardLockedHeaderTop() {
+        var hudBottom = findTopHudBottom();
+        var contentTop = findContentStartTop();
+        var barHeight = (headerBar && headerBar.offsetHeight) || 58;
+        var gapTop = hudBottom + 4;
+        var gapBottom = contentTop ? (contentTop - barHeight - 4) : 0;
+
+        if (contentTop && gapBottom >= gapTop) {
+            return Math.round(gapTop + ((gapBottom - gapTop) / 2));
+        }
+
+        if (contentTop) {
+            return Math.max(hudBottom + 2, contentTop - barHeight - 2);
+        }
+
+        return hudBottom + 6;
+    }
+
     function positionHeaderBar() {
         if (!headerBar) return;
-        var top = findTopAnchorBottom();
+
+        var barHeight = headerBar.offsetHeight || 58;
+        var top = getHardLockedHeaderTop();
+
         headerBar.style.top = top + 'px';
         if (overlay) {
-            overlay.style.top = (top + headerBar.offsetHeight + 8) + 'px';
+            overlay.style.top = (top + barHeight + 8) + 'px';
         }
     }
 
