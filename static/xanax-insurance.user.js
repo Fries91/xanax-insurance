@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    if (window.__SINNERS_INSURANCE_V400__ && document.getElementById('warins-shield')) return;
+    if (window.__SINNERS_INSURANCE_V400__ && document.getElementById('warins-headerbar')) return;
     window.__SINNERS_INSURANCE_V400__ = true;
 
     var API_BASE = 'https://xanax-insurance.onrender.com';
@@ -29,7 +29,6 @@
     var K_MEMBER = 'warins_member_v1';
     var K_TAB = 'warins_tab_v1';
     var K_OPEN = 'warins_open_v1';
-    var K_SHIELD_POS = 'warins_shield_pos_v1';
     var K_OVERLAY_SCROLL = 'warins_overlay_scroll_v1';
 
     var TAB_ROW_1 = [
@@ -40,7 +39,7 @@
     ];
 
     var overlay = null;
-    var shield = null;
+    var headerBar = null;
     var mounted = false;
     var remountTimer = null;
 
@@ -176,42 +175,57 @@
     function addStyles() {
         if (document.getElementById('warins-style')) return;
         var css = "\
-#warins-shield {\
+#warins-headerbar {\
   position: fixed !important;\
   z-index: 2147483647 !important;\
-  width: 36px !important;\
-  height: 36px !important;\
-  border-radius: 10px !important;\
+  left: 0 !important;\
+  right: 0 !important;\
+  top: 60px !important;\
+  width: 100% !important;\
   display: flex !important;\
+  justify-content: center !important;\
+  align-items: center !important;\
+  padding: 8px 10px !important;\
+  background: linear-gradient(180deg, rgba(10,10,10,.96), rgba(18,18,18,.96)) !important;\
+  border-top: 1px solid rgba(255,255,255,.06) !important;\
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;\
+  box-shadow: 0 8px 20px rgba(0,0,0,.30) !important;\
+  box-sizing: border-box !important;\
+}\
+#warins-headerbtn {\
+  appearance: none !important;\
+  -webkit-appearance: none !important;\
+  display: inline-flex !important;\
   align-items: center !important;\
   justify-content: center !important;\
+  gap: 8px !important;\
+  width: min(680px, calc(100% - 16px)) !important;\
+  min-height: 42px !important;\
+  padding: 10px 16px !important;\
+  border-radius: 12px !important;\
+  border: 1px solid rgba(255,255,255,.12) !important;\
+  background: linear-gradient(180deg, rgba(72,199,217,.95), rgba(16,90,110,.98)) !important;\
+  color: #fff !important;\
+  font-size: 16px !important;\
+  font-weight: 800 !important;\
+  line-height: 1.1 !important;\
+  cursor: pointer !important;\
+  text-align: center !important;\
+  box-shadow: 0 8px 22px rgba(0,0,0,.28) !important;\
+}\
+#warins-headerbtn:hover {\
+  filter: brightness(1.05) !important;\
+}\
+#warins-headerbtn .warins-btn-icon {\
   font-size: 18px !important;\
   line-height: 1 !important;\
-  cursor: pointer !important;\
-  user-select: none !important;\
-  -webkit-user-select: none !important;\
-  -webkit-touch-callout: none !important;\
-  -webkit-tap-highlight-color: transparent !important;\
-  touch-action: none !important;\
-  box-shadow: 0 8px 24px rgba(0,0,0,.45) !important;\
-  border: 1px solid rgba(255,255,255,.10) !important;\
-  background: radial-gradient(circle at 30% 20%, rgba(72,199,217,.98), rgba(16,90,110,.98) 55%, rgba(8,38,46,.98)) !important;\
-  color: #fff !important;\
-  left: auto !important;\
-  right: 14px !important;\
-  top: 50% !important;\
-  bottom: auto !important;\
-  transform: translateY(-50%) !important;\
-  opacity: 1 !important;\
-  visibility: visible !important;\
-  pointer-events: auto !important;\
 }\
 #warins-overlay {\
   position: fixed !important;\
   z-index: 2147483646 !important;\
   left: 8px !important;\
   right: 8px !important;\
-  top: 8px !important;\
+  top: 118px !important;\
   bottom: 8px !important;\
   width: auto !important;\
   max-width: 520px !important;\
@@ -382,10 +396,13 @@
   margin-bottom:8px !important;\
 }\
 @media (max-width: 520px) {\
-  #warins-shield {\
-    width: 44px !important;\
-    height: 44px !important;\
-    font-size: 22px !important;\
+  #warins-headerbar {\
+    padding: 7px 8px !important;\
+  }\
+  #warins-headerbtn {\
+    width: calc(100% - 8px) !important;\
+    min-height: 44px !important;\
+    font-size: 15px !important;\
     border-radius: 12px !important;\
   }\
   #warins-overlay {\
@@ -405,47 +422,41 @@
         document.head.appendChild(style);
     }
 
-    function getViewport() {
-        var de = document.documentElement || {};
-        return {
-            w: Math.max(de.clientWidth || 0, window.innerWidth || 0, 320),
-            h: Math.max(de.clientHeight || 0, window.innerHeight || 0, 320)
-        };
+    function findTopAnchorBottom() {
+        var selectors = [
+            '#tcLogo',
+            'header',
+            '[class*=\"announcement\"]',
+            '[class*=\"Announce\"]',
+            '[class*=\"banner\"]'
+        ];
+
+        var maxBottom = 56;
+
+        selectors.forEach(function (sel) {
+            document.querySelectorAll(sel).forEach(function (el) {
+                if (!el || !el.getBoundingClientRect) return;
+                var r = el.getBoundingClientRect();
+                if (r.height > 0 && r.bottom > maxBottom && r.top < 220) {
+                    maxBottom = r.bottom;
+                }
+            });
+        });
+
+        return Math.max(56, Math.round(maxBottom));
     }
 
-    function loadPos(key, fallback) {
-        var raw = GM_getValue(key, null);
-        if (!raw) return { left: fallback.left, top: fallback.top };
-        if (typeof raw === 'string') {
-            try { raw = JSON.parse(raw); } catch (_e) { return { left: fallback.left, top: fallback.top }; }
+    function positionHeaderBar() {
+        if (!headerBar) return;
+        var top = findTopAnchorBottom();
+        headerBar.style.top = top + 'px';
+        if (overlay) {
+            overlay.style.top = (top + headerBar.offsetHeight + 8) + 'px';
         }
-        if (!raw || typeof raw !== 'object') return { left: fallback.left, top: fallback.top };
-        return {
-            left: isFinite(Number(raw.left)) ? Number(raw.left) : fallback.left,
-            top: isFinite(Number(raw.top)) ? Number(raw.top) : fallback.top
-        };
-    }
-
-    function savePos(key, pos) {
-        GM_setValue(key, { left: Math.round(Number(pos.left || 0)), top: Math.round(Number(pos.top || 0)) });
     }
 
     function applyShieldPos() {
-        if (!shield) return;
-        if (document.body && shield.parentNode !== document.body) document.body.appendChild(shield);
-        shield.style.left = 'auto';
-        shield.style.right = '14px';
-        shield.style.top = 'auto';
-        shield.style.bottom = '84px';
-        shield.style.transform = 'none';
-    }
-
-    function makeShieldDraggable() {
-        if (!shield || shield.__warinsDragBound) return;
-        shield.__warinsDragBound = true;
-        shield.addEventListener('click', function () {
-            toggleOverlay();
-        });
+        positionHeaderBar();
     }
 
     function isLoggedIn() {
@@ -568,8 +579,7 @@
                         '<div class="warins-kv"><div>Status</div><div><span class="warins-pill good">' + (member.is_admin ? 'Admin' : 'Verified') + '</span></div></div>',
                     '</div>'
                 ].join('') : '')
-            ].join('')
-        ].join('');
+            ].join('');
     }
 
     function renderPlanTab(plan, meData) {
@@ -919,18 +929,31 @@
         saveStateBits();
         if (!overlay) return;
         overlay.classList.toggle('open', state.isOpen);
+        positionHeaderBar();
         if (state.isOpen) renderBody();
     }
 
-    function createShield() {
-        if (shield) return shield;
-        shield = document.createElement('div');
-        shield.id = 'warins-shield';
-        shield.textContent = '💊';
-        shield.title = 'Sinner’s Insurance';
-        document.body.appendChild(shield);
-        makeShieldDraggable();
-        return shield;
+    function createHeaderBar() {
+        if (headerBar) return headerBar;
+        headerBar = document.createElement('div');
+        headerBar.id = 'warins-headerbar';
+        headerBar.innerHTML = ''
+            + '<button type="button" id="warins-headerbtn" title="Sinner’s Insurance">'
+            +   '<span class="warins-btn-icon">📝</span>'
+            +   '<span>Sinners Insurance 💊</span>'
+            + '</button>';
+
+        document.body.appendChild(headerBar);
+
+        var btn = headerBar.querySelector('#warins-headerbtn');
+        if (btn) {
+            btn.addEventListener('click', function () {
+                setOverlayOpen(!state.isOpen);
+            });
+        }
+
+        positionHeaderBar();
+        return headerBar;
     }
 
     function createOverlay() {
@@ -965,12 +988,12 @@
 
     function mount() {
         if (mounted) {
-            applyShieldPos();
+            positionHeaderBar();
             setOverlayOpen(state.isOpen);
             return;
         }
         addStyles();
-        createShield();
+        createHeaderBar();
         createOverlay();
         applyShieldPos();
         setOverlayOpen(state.isOpen);
@@ -979,15 +1002,15 @@
 
     function ensureMounted() {
         if (!document.body) return;
-        var hasShield = !!document.getElementById('warins-shield');
+        var hasHeaderBar = !!document.getElementById('warins-headerbar');
         var hasOverlay = !!document.getElementById('warins-overlay');
-        if (!hasShield || !hasOverlay || !shield || !overlay) {
+        if (!hasHeaderBar || !hasOverlay || !headerBar || !overlay) {
             mounted = false;
-            shield = null;
+            headerBar = null;
             overlay = null;
             mount();
         } else {
-            applyShieldPos();
+            positionHeaderBar();
         }
     }
 
@@ -999,14 +1022,14 @@
         remountTimer = setInterval(function () {
             try {
                 if (!document.body) return;
-                if (!document.getElementById('warins-shield') || !document.getElementById('warins-overlay')) {
+                if (!document.getElementById('warins-headerbar') || !document.getElementById('warins-overlay')) {
                     mounted = false;
-                    shield = null;
+                    headerBar = null;
                     overlay = null;
                     ensureMounted();
                     renderBody();
                 } else {
-                    applyShieldPos();
+                    positionHeaderBar();
                 }
             } catch (_err) {}
         }, 2000);
@@ -1020,7 +1043,7 @@
         });
 
         window.addEventListener('resize', function () {
-            applyShieldPos();
+            positionHeaderBar();
         });
 
 
