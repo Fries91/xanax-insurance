@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.8.0
+// @version      2.8.2
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -1461,23 +1461,23 @@
                 +   '<div class="si-7ds-card-title">Claims Center</div>'
                 +   '<div class="si-7ds-text">Members can fill in the claim form directly here. Admins get a read-only review view with status controls, payout amount, and decision notes.</div>'
                 + '</div>'
-                + (isMember() && !isAdmin()
-                +   ? '<div class="si-7ds-card">'
-                +       + '<div class="si-7ds-card-title">Member Dashboard</div>'
-                +       + '<div class="si-7ds-text">Your claims are shown first in the dropdown. Use this box to quickly see your current claim activity.</div>'
-                +       + '<div class="si-7ds-summary-grid">'
-                +         + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().total) + '</div><div class="si-7ds-summary-label">Total</div></div>'
-                +         + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().pending + getMemberClaimSummary().review) + '</div><div class="si-7ds-summary-label">Open</div></div>'
-                +         + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
-                +       + '</div>'
-                +       + '<div class="si-7ds-pillrow">'
-                +         + '<span class="si-7ds-pill">Pending ' + String(getMemberClaimSummary().pending) + '</span>'
-                +         + '<span class="si-7ds-pill">Review ' + String(getMemberClaimSummary().review) + '</span>'
-                +         + '<span class="si-7ds-pill">Approved ' + String(getMemberClaimSummary().approved) + '</span>'
-                +         + '<span class="si-7ds-pill">Denied ' + String(getMemberClaimSummary().denied) + '</span>'
-                +       + '</div>'
-                +     + '</div>'
-                +   : '')
+                + ((isMember() && !isAdmin())
+                ? '<div class="si-7ds-card">'
+                    + '<div class="si-7ds-card-title">Member Dashboard</div>'
+                    + '<div class="si-7ds-text">Your claims are shown first in the dropdown. Use this box to quickly see your current claim activity.</div>'
+                    + '<div class="si-7ds-summary-grid">'
+                      + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().total) + '</div><div class="si-7ds-summary-label">Total</div></div>'
+                      + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().pending + getMemberClaimSummary().review) + '</div><div class="si-7ds-summary-label">Open</div></div>'
+                      + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
+                    + '</div>'
+                    + '<div class="si-7ds-pillrow">'
+                      + '<span class="si-7ds-pill">Pending ' + String(getMemberClaimSummary().pending) + '</span>'
+                      + '<span class="si-7ds-pill">Review ' + String(getMemberClaimSummary().review) + '</span>'
+                      + '<span class="si-7ds-pill">Approved ' + String(getMemberClaimSummary().approved) + '</span>'
+                      + '<span class="si-7ds-pill">Denied ' + String(getMemberClaimSummary().denied) + '</span>'
+                    + '</div>'
+                  + '</div>'
+                : '')
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claim Filters</div>'
                 +   '<div class="si-7ds-filter-grid">'
