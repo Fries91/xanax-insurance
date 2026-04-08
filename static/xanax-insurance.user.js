@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.2.7
+// @version      2.3.0
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @run-at       document-idle
 // @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
 // ==/UserScript==
 
 (function () {
@@ -16,7 +18,6 @@
     var overlay = null;
     var remountTimer = null;
     var activeTab = 'overview';
-    var selectedPlan = 'None';
 
     var TAB_LABELS = {
         overview: 'Overview',
@@ -24,6 +25,108 @@
         claims: 'Claims',
         settings: 'Settings'
     };
+
+    function esc(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function saveSession() {
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_selected_plan', selectedPlan || 'None');
+            GM_setValue('si_session_role', sessionRole || 'guest');
+            GM_setValue('si_session_name', sessionName || 'Guest');
+            GM_setValue('si_claim_status', claimStatus || 'Not submitted');
+            GM_setValue('si_claim_note', claimNote || '');
+            GM_setValue('si_claim_loss', claimLoss || '');
+            GM_setValue('si_claim_proof', claimProof || '');
+            GM_setValue('si_claim_stack', claimStack || '');
+        }
+    }
+
+    function isAdmin() {
+        return sessionRole === 'admin';
+    }
+
+    function isMember() {
+        return sessionRole === 'member' || sessionRole === 'admin';
+    }
+
+    function loginAs(role) {
+        var promptLabel = role === 'admin' ? 'Enter admin name' : 'Enter member name';
+        var name = window.prompt(promptLabel, sessionName && sessionName !== 'Guest' ? sessionName : '');
+        if (!name) return;
+
+        var passLabel = role === 'admin' ? 'Enter admin passcode' : 'Enter member passcode';
+        var pass = window.prompt(passLabel, '');
+        if (pass === null) return;
+
+        if (role === 'admin') {
+            if (pass !== 'wrathadmin') {
+                window.alert('Admin login failed.');
+                return;
+            }
+        } else {
+            if (pass !== 'sinsmember') {
+                window.alert('Member login failed.');
+                return;
+            }
+        }
+
+        sessionRole = role;
+        sessionName = String(name).trim() || (role === 'admin' ? 'Admin' : 'Member');
+        saveSession();
+        renderOverlay();
+    }
+
+    function logoutSession() {
+        sessionRole = 'guest';
+        sessionName = 'Guest';
+        saveSession();
+        renderOverlay();
+    }
+
+    function submitClaim() {
+        if (!isMember()) {
+            window.alert('Member login required before submitting a claim.');
+            return;
+        }
+        if (!selectedPlan || selectedPlan === 'None') {
+            window.alert('Select a plan first before submitting a claim.');
+            return;
+        }
+        if (!claimNote.trim() || !claimLoss.trim() || !claimProof.trim() || !claimStack.trim()) {
+            window.alert('Fill in all claim fields before submitting.');
+            return;
+        }
+        claimStatus = 'Pending review';
+        saveSession();
+        activeTab = 'claims';
+        renderOverlay();
+    }
+
+    function updateClaimField(field, value) {
+        if (field === 'note') claimNote = value || '';
+        if (field === 'loss') claimLoss = value || '';
+        if (field === 'proof') claimProof = value || '';
+        if (field === 'stack') claimStack = value || '';
+        saveSession();
+    }
+
+    function adminSetClaimStatus(nextStatus) {
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        claimStatus = nextStatus;
+        saveSession();
+        activeTab = 'claims';
+        renderOverlay();
+    }
 
     function addStyles() {
         if (document.getElementById('si-7ds-style-flag')) return;
@@ -375,36 +478,6 @@
 #si-7ds-overlay .si-7ds-btn.alt {
   background: linear-gradient(180deg, rgba(60, 12, 16, .92), rgba(24, 7, 10, .96)) !important;
 }
-#si-7ds-overlay .si-7ds-selected-banner {
-  border-radius: 12px !important;
-  border: 1px solid rgba(222,185,90,.24) !important;
-  background: linear-gradient(180deg, rgba(124,19,26,.24), rgba(255,255,255,.02)) !important;
-  padding: 10px 12px !important;
-  color: #f8e6ab !important;
-  font-size: 12px !important;
-  font-weight: 800 !important;
-  letter-spacing: .35px !important;
-}
-#si-7ds-overlay .si-7ds-term-box {
-  border-radius: 12px !important;
-  border: 1px solid rgba(201,162,80,.16) !important;
-  background: rgba(255,255,255,.02) !important;
-  padding: 10px !important;
-  display: grid !important;
-  gap: 6px !important;
-}
-#si-7ds-overlay .si-7ds-term-title {
-  font-size: 11px !important;
-  font-weight: 900 !important;
-  color: #f2de9f !important;
-  text-transform: uppercase !important;
-  letter-spacing: .7px !important;
-}
-#si-7ds-overlay .si-7ds-term-text {
-  font-size: 12px !important;
-  line-height: 1.45 !important;
-  color: #f8f0dd !important;
-}
 @media (max-width: 520px) {
 
   #si-7ds-launcher-btn {
@@ -511,83 +584,43 @@
         if (activeTab === 'plans') {
             return ''
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Sin Plans</div>'
-                +   '<div class="si-7ds-text">Plans now use in-overlay selection and real terms panels. Pick a sin plan below and review its coverage without leaving the overlay.</div>'
+                +   '<div class="si-7ds-card-title">Coverage Plans</div>'
+                +   '<div class="si-7ds-text">Choose from three insurance tiers built for different member needs. These are your main plan display boxes and can be edited later with your real pricing and payout numbers.</div>'
                 + '</div>'
-                + '<div class="si-7ds-selected-banner">Selected plan: <strong>' + selectedPlan + '</strong></div>'
-
-                + '<div class="si-7ds-plan-box">'
-                +   '<div class="si-7ds-plan-top">'
-                +     '<div>'
-                +       '<div class="si-7ds-plan-name">Pride Sin</div>'
-                +       '<div class="si-7ds-plan-tier">Basic coverage</div>'
-                +     '</div>'
-                +     '<span class="si-7ds-pill">1 Xanax</span>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Basic Plan</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Entry tier</span>'
+                +     '<span class="si-7ds-pill">Low cost</span>'
                 +   '</div>'
-                +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">Single Xanax</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Tier</div><div class="si-7ds-plan-stat-value">Basic</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Best For</div><div class="si-7ds-plan-stat-value">Light use</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Claim Scope</div><div class="si-7ds-plan-stat-value">1 use only</div></div>'
-                +   '</div>'
-                +   '<div class="si-7ds-term-box">'
-                +     '<div class="si-7ds-term-title">Pride Terms</div>'
-                +     '<div class="si-7ds-term-text">Pride Sin is the basic plan. It protects a single Xanax use and is meant for members who only want light starter coverage.</div>'
-                +     '<div class="si-7ds-term-text">Use this plan when the member wants simple protection, lower scope, and a smaller claim range.</div>'
-                +   '</div>'
-                +   '<div class="si-7ds-plan-actions">'
-                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Pride Sin">Select Pride</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Pride Sin">Show Terms</button>'
+                +   '<div class="si-7ds-list" style="margin-top:10px;">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your starter fee here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your basic payout amount here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Best for light coverage with simple claim rules.</div></div>'
                 +   '</div>'
                 + '</div>'
-
-                + '<div class="si-7ds-plan-box">'
-                +   '<div class="si-7ds-plan-top">'
-                +     '<div>'
-                +       '<div class="si-7ds-plan-name">Wrath Sin</div>'
-                +       '<div class="si-7ds-plan-tier">Standard coverage</div>'
-                +     '</div>'
-                +     '<span class="si-7ds-pill">1st to 4th stack</span>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Standard Plan</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Balanced tier</span>'
+                +     '<span class="si-7ds-pill">Most used</span>'
                 +   '</div>'
-                +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">1st-4th Xanax</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Tier</div><div class="si-7ds-plan-stat-value">Standard</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Best For</div><div class="si-7ds-plan-stat-value">Stacking</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Claim Scope</div><div class="si-7ds-plan-stat-value">4 uses</div></div>'
-                +   '</div>'
-                +   '<div class="si-7ds-term-box">'
-                +     '<div class="si-7ds-term-title">Wrath Terms</div>'
-                +     '<div class="si-7ds-term-text">Wrath Sin is the standard plan. It covers the 1st, 2nd, 3rd, and 4th Xanax stack for members building a stronger jump.</div>'
-                +     '<div class="si-7ds-term-text">Use this plan for broader stacked-use coverage and a stronger claim range than Pride.</div>'
-                +   '</div>'
-                +   '<div class="si-7ds-plan-actions">'
-                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Wrath Sin">Select Wrath</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Wrath Sin">Show Terms</button>'
+                +   '<div class="si-7ds-list" style="margin-top:10px;">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your mid-tier fee here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your mid-tier payout amount here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Good balance between cost, protection, and claim value.</div></div>'
                 +   '</div>'
                 + '</div>'
-
-                + '<div class="si-7ds-plan-box">'
-                +   '<div class="si-7ds-plan-top">'
-                +     '<div>'
-                +       '<div class="si-7ds-plan-name">Envy Sin</div>'
-                +       '<div class="si-7ds-plan-tier">Premium coverage</div>'
-                +     '</div>'
-                +     '<span class="si-7ds-pill">Full happy jump</span>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Premium Plan</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Top tier</span>'
+                +     '<span class="si-7ds-pill">High payout</span>'
                 +   '</div>'
-                +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">Full jump</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Tier</div><div class="si-7ds-plan-stat-value">Premium</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Best For</div><div class="si-7ds-plan-stat-value">Max setup</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Claim Scope</div><div class="si-7ds-plan-stat-value">Full stack</div></div>'
-                +   '</div>'
-                +   '<div class="si-7ds-term-box">'
-                +     '<div class="si-7ds-term-title">Envy Terms</div>'
-                +     '<div class="si-7ds-term-text">Envy Sin is the premium plan. It protects the full happy jump stack for members who want the highest scope of coverage.</div>'
-                +     '<div class="si-7ds-term-text">Use this plan when the member wants maximum protection and the broadest claim range.</div>'
-                +   '</div>'
-                +   '<div class="si-7ds-plan-actions">'
-                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select Envy</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Envy Sin">Show Terms</button>'
+                +   '<div class="si-7ds-list" style="margin-top:10px;">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your premium fee here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your premium payout amount here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Highest protection tier with stronger member benefits.</div></div>'
                 +   '</div>'
                 + '</div>';
         }
@@ -596,43 +629,59 @@
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claims Center</div>'
-                +   '<div class="si-7ds-text">Submit, review, and track insurance claims here. This tab is the main place for members to understand how claims move through the system and what details are needed for a payout.</div>'
+                +   '<div class="si-7ds-text">Members can fill in the claim form directly here. Admins can review the saved claim details and move the claim through status steps.</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Access State</div>'
+                +   '<div class="si-7ds-text">Signed in as: <strong>' + sessionName + '</strong> (' + sessionRole + ')</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Selected Coverage</div>'
                 +   '<div class="si-7ds-text">Current selected plan: <strong>' + selectedPlan + '</strong></div>'
                 + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Claim Flow</div>'
-                +   '<div class="si-7ds-pillrow">'
-                +     '<span class="si-7ds-pill">Submit</span>'
-                +     '<span class="si-7ds-pill">Review</span>'
-                +     '<span class="si-7ds-pill">Approve</span>'
-                +     '<span class="si-7ds-pill">Payout</span>'
+                + '<div class="si-7ds-claim-box">'
+                +   '<div class="si-7ds-claim-status">Claim Status: ' + claimStatus + '</div>'
+                +   '<div class="si-7ds-form-grid">'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-stack">Stack Type</label>'
+                +       '<input id="si-claim-stack" class="si-7ds-input" type="text" placeholder="Example: 2nd Xanax stack or full happy jump" value="' + esc(claimStack) + '">'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-loss">Loss Details</label>'
+                +       '<input id="si-claim-loss" class="si-7ds-input" type="text" placeholder="What was lost?" value="' + esc(claimLoss) + '">'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-proof">Proof / Screenshot Note</label>'
+                +       '<input id="si-claim-proof" class="si-7ds-input" type="text" placeholder="Proof link or screenshot note" value="' + esc(claimProof) + '">'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-note">Claim Note</label>'
+                +       '<textarea id="si-claim-note" class="si-7ds-textarea" placeholder="Add your claim details here">' + esc(claimNote) + '</textarea>'
+                +     '</div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="submit-claim">Submit Claim</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="review-claim">Mark Review</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="approve-claim">Approve</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="deny-claim">Deny</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="pay-claim">Mark Paid</button>'
                 +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Required Claim Details</div>'
+                +   '<div class="si-7ds-card-title">Saved Claim Details</div>'
                 +   '<div class="si-7ds-list">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Member:</strong> Name or ID of the insured member filing the claim.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Plan:</strong> Pride Sin, Wrath Sin, or Envy Sin.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Loss:</strong> What was lost and what stack or jump it affected.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Proof:</strong> Screenshots, logs, or notes to support the claim review.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Stack:</strong> ' + esc(claimStack || 'Not set') + '</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Loss:</strong> ' + esc(claimLoss || 'Not set') + '</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Proof:</strong> ' + esc(claimProof || 'Not set') + '</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Note:</strong> ' + esc(claimNote || 'Not set') + '</div></div>'
                 +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Claim Status Board</div>'
-                +   '<div class="si-7ds-pillrow">'
-                +     '<span class="si-7ds-pill">Pending</span>'
-                +     '<span class="si-7ds-pill">Under review</span>'
-                +     '<span class="si-7ds-pill">Approved</span>'
-                +     '<span class="si-7ds-pill">Denied</span>'
-                +     '<span class="si-7ds-pill">Paid</span>'
+                +   '<div class="si-7ds-card-title">Role Rules</div>'
+                +   '<div class="si-7ds-list">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Members:</strong> Fill in the form and submit claims after logging in and choosing a plan.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Admins:</strong> Review the saved details and move claims into review, approve, deny, or mark paid.</div></div>'
                 +   '</div>'
-                + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Payout Notes</div>'
-                +   '<div class="si-7ds-text">Use this area later for claim buttons, claim forms, payout logs, and admin review actions. Right now it acts as the structure box for the full claim system you will build next.</div>'
                 + '</div>';
         }
 
@@ -671,27 +720,17 @@
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () {
-                selectedPlan = btn.getAttribute('data-plan') || 'Plan';
-                renderOverlay();
+                var plan = btn.getAttribute('data-plan') || 'Plan';
+                window.alert(plan + ' selected. Next step is wiring this into claims or saved member choice.');
             });
         });
 
-        overlay.querySelectorAll('[data-action="terms-plan"]').forEach(function (btn) {
+        overlay.querySelectorAll('[data-action="plan-info"]').forEach(function (btn) {
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () {
                 var plan = btn.getAttribute('data-plan') || 'Plan';
-                var cardTitle = plan === 'Pride Sin' ? 'Pride Terms'
-                    : plan === 'Wrath Sin' ? 'Wrath Terms'
-                    : 'Envy Terms';
-                activeTab = 'plans';
-                renderOverlay();
-                var boxes = overlay.querySelectorAll('.si-7ds-term-title');
-                boxes.forEach(function (el) {
-                    if (el.textContent === cardTitle && el.scrollIntoView) {
-                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                });
+                window.alert(plan + ' terms button clicked. Next step is a real terms modal or terms box.');
             });
         });
     }
