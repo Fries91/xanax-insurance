@@ -3,19 +3,15 @@ from __future__ import annotations
 import os
 import requests
 from flask import Flask, jsonify, request
-from db import ClaimsStore, UsersStore, ClaimHistoryStore
+from db import ClaimsStore, ClaimHistoryStore
 
 app = Flask(__name__)
 claims = ClaimsStore(os.getenv("DB_PATH", "claims.sqlite3"))
-users = UsersStore(os.getenv("DB_PATH", "claims.sqlite3"))
 history = ClaimHistoryStore(os.getenv("DB_PATH", "claims.sqlite3"))
+
 SYNC_SECRET = os.getenv("SYNC_SECRET", "change-me")
-
-ADMIN_USER = os.getenv("ADMIN_USER", "admin1")
-ADMIN_PASS = os.getenv("ADMIN_PASS", "wrathadmin")
 FACTION_ID = str(os.getenv("FACTION_ID", "")).strip()
-
-users.ensure_user(ADMIN_USER, ADMIN_PASS, "admin", "Admin")
+ADMIN_PLAYER_ID = str(os.getenv("ADMIN_PLAYER_ID", "")).strip()
 
 def corsify(resp):
     resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -31,7 +27,7 @@ def after_request(resp):
 def health():
     if request.method == "OPTIONS":
         return corsify(jsonify({"ok": True}))
-    return jsonify({"ok": True, "service": "xanax-insurance-api", "faction_lock": FACTION_ID})
+    return jsonify({"ok": True, "service": "xanax-insurance-api", "faction_lock": FACTION_ID, "admin_player_id": ADMIN_PLAYER_ID})
 
 def check_secret(payload: dict) -> bool:
     return (payload or {}).get("secret", "") == SYNC_SECRET
@@ -44,10 +40,20 @@ def torn_lookup_user(api_key: str) -> dict | None:
     data = r.json()
     return data if isinstance(data, dict) else None
 
-def verify_admin(auth: dict):
-    username = str((auth or {}).get("username", "")).strip()
-    passcode = str((auth or {}).get("passcode", "")).strip()
-    return users.get_user(username, passcode)
+def verify_admin_by_key(api_key: str):
+    if not api_key or not ADMIN_PLAYER_ID:
+        return None, "missing admin api key or admin player id"
+    data = torn_lookup_user(api_key)
+    if not data:
+        return None, "torn api lookup failed"
+    user_obj = data.get("user") or {}
+    player_id = str(user_obj.get("id", "")).strip()
+    player_name = str(user_obj.get("name", "")).strip() or f"Player {player_id}"
+    if not player_id:
+        return None, "could not identify player from api key"
+    if player_id != ADMIN_PLAYER_ID:
+        return None, "api key owner is not the configured admin"
+    return {"username": player_id, "name": player_name, "role": "admin"}, None
 
 def verify_faction_member(auth: dict):
     api_key = str((auth or {}).get("api_key", "")).strip()
@@ -67,16 +73,17 @@ def verify_faction_member(auth: dict):
         return None, "player is not in the locked faction"
     return {"username": player_id, "name": player_name, "role": "member", "faction_id": player_faction_id}, None
 
-@app.route("/api/auth/admin-login", methods=["POST", "OPTIONS"])
-def auth_admin_login():
+@app.route("/api/auth/admin-key-login", methods=["POST", "OPTIONS"])
+def auth_admin_key_login():
     if request.method == "OPTIONS":
         return corsify(jsonify({"ok": True}))
     payload = request.get_json(silent=True) or {}
     if not check_secret(payload):
         return jsonify({"ok": False, "error": "unauthorized"}), 403
-    user = verify_admin(payload)
+    api_key = str(payload.get("api_key", "")).strip()
+    user, err = verify_admin_by_key(api_key)
     if not user:
-        return jsonify({"ok": False, "error": "invalid credentials"}), 403
+        return jsonify({"ok": False, "error": err or "admin api key login failed"}), 403
     return jsonify({"ok": True, "user": user})
 
 @app.route("/api/auth/faction-login", methods=["POST", "OPTIONS"])
@@ -157,9 +164,10 @@ def push_claim():
         return jsonify({"ok": True, "claim": clean})
 
     if action == "admin_update":
-        user = verify_admin(auth)
-        if not user or user.get("role") != "admin":
-            return jsonify({"ok": False, "error": "admin auth failed"}), 403
+        admin_key = str((auth or {}).get("admin_api_key", "")).strip()
+        user, err = verify_admin_by_key(admin_key)
+        if not user:
+            return jsonify({"ok": False, "error": err or "admin auth failed"}), 403
         allowed = {"Pending review", "Under review", "Approved", "Denied", "Paid"}
         if clean["status"] not in allowed:
             return jsonify({"ok": False, "error": "invalid status"}), 400
