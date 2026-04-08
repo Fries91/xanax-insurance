@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Sinner's Insurance 7DS Tabs
+// @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.7.1
-// @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
+// @version      2.8.0
+// @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @run-at       document-idle
@@ -33,6 +33,9 @@
     var decisionNote = (typeof GM_getValue === 'function' ? GM_getValue('si_decision_note', '') : '');
     var claimsDb = (typeof GM_getValue === 'function' ? GM_getValue('si_claims_db', '[]') : '[]');
     var selectedClaimId = (typeof GM_getValue === 'function' ? GM_getValue('si_selected_claim_id', '') : '');
+    var claimFilterStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_status', 'all') : 'all');
+    var claimFilterMember = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_member', '') : '');
+    var claimSortMode = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_sort_mode', 'newest') : 'newest');
     var apiBase = (typeof GM_getValue === 'function' ? GM_getValue('si_api_base', 'https://xanax-insurance.onrender.com') : 'https://xanax-insurance.onrender.com');
     var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '') : '');
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
@@ -76,6 +79,9 @@
             GM_setValue('si_decision_note', decisionNote || '');
             GM_setValue('si_claims_db', claimsDb || '[]');
             GM_setValue('si_selected_claim_id', selectedClaimId || '');
+            GM_setValue('si_claim_filter_status', claimFilterStatus || 'all');
+            GM_setValue('si_claim_filter_member', claimFilterMember || '');
+            GM_setValue('si_claim_sort_mode', claimSortMode || 'newest');
             GM_setValue('si_api_base', apiBase || '');
             GM_setValue('si_sync_secret', syncSecret || '');
             GM_setValue('si_backend_status', backendStatus || 'Not tested');
@@ -144,6 +150,10 @@
             window.alert('Fill in all claim fields before submitting.');
             return;
         }
+        if (!stackMatchesPlan(selectedPlan, claimStack)) {
+            window.alert('Stack type does not match the selected plan rule: ' + getPlanRuleText(selectedPlan));
+            return;
+        }
         if (!claimId) claimId = makeClaimId();
         selectedClaimId = claimId;
         claimStatus = 'Pending review';
@@ -152,6 +162,82 @@
         saveSession();
         pushCurrentClaimToBackend();
         activeTab = 'claims';
+        renderOverlay();
+    }
+
+    function getStatusSortRank(status) {
+        var s = String(status || '');
+        if (s === 'Pending review') return 1;
+        if (s === 'Under review') return 2;
+        if (s === 'Approved') return 3;
+        if (s === 'Denied') return 4;
+        if (s === 'Paid') return 5;
+        return 99;
+    }
+
+    function sortClaimsItems(items) {
+        var arr = items.slice();
+        arr.sort(function (a, b) {
+            var mode = String(claimSortMode || 'newest');
+
+            if (mode === 'oldest') {
+                return String(a && a.id || '').localeCompare(String(b && b.id || ''));
+            }
+            if (mode === 'member_az') {
+                var byMember = String(a && a.member || '').localeCompare(String(b && b.member || ''));
+                if (byMember !== 0) return byMember;
+                return String(b && b.id || '').localeCompare(String(a && a.id || ''));
+            }
+            if (mode === 'status') {
+                var byStatus = getStatusSortRank(a && a.status).valueOf() - getStatusSortRank(b && b.status).valueOf();
+                if (byStatus !== 0) return byStatus;
+                return String(b && b.id || '').localeCompare(String(a && a.id || ''));
+            }
+            return String(b && b.id || '').localeCompare(String(a && a.id || ''));
+        });
+        return arr;
+    }
+
+    function getFilteredClaimsDbItems() {
+        var items = getClaimsDbItems();
+        var filtered = items.filter(function (item) {
+            if (!item) return false;
+            var statusOk = claimFilterStatus === 'all' || String(item.status || '') === String(claimFilterStatus || '');
+            var memberNeedle = String(claimFilterMember || '').trim().toLowerCase();
+            var memberHay = String(item.member || '').toLowerCase();
+            var memberOk = !memberNeedle || memberHay.indexOf(memberNeedle) >= 0;
+            return statusOk && memberOk;
+        });
+
+        filtered = sortClaimsItems(filtered);
+
+        if (isMember() && !isAdmin()) {
+            return filtered.filter(function (item) {
+                return String(item && item.member || '').toLowerCase() === String(sessionName || '').toLowerCase();
+            });
+        }
+
+        return filtered;
+    }
+
+    function updateClaimFilters() {
+        var statusEl = overlay && overlay.querySelector('#si-claim-filter-status');
+        var memberEl = overlay && overlay.querySelector('#si-claim-filter-member');
+        var sortEl = overlay && overlay.querySelector('#si-claim-sort-mode');
+        if (statusEl) claimFilterStatus = statusEl.value || 'all';
+        if (memberEl) claimFilterMember = (memberEl.value || '').trim();
+        if (sortEl) claimSortMode = sortEl.value || 'newest';
+        saveSession();
+
+        var filtered = getFilteredClaimsDbItems();
+        if (filtered.length) {
+            var stillVisible = filtered.some(function (item) { return item && item.id === selectedClaimId; });
+            if (!stillVisible) {
+                selectedClaimId = filtered[0].id || '';
+                syncCurrentFromSelectedClaim();
+                saveSession();
+            }
+        }
         renderOverlay();
     }
 
@@ -539,6 +625,74 @@
         }).catch(function () { return null; });
     }
 
+    function parseMoneyLoose(value) {
+        var s = String(value || '').replace(/[^0-9.]/g, '');
+        var n = parseFloat(s);
+        return isNaN(n) ? 0 : n;
+    }
+
+    function getOverviewStats() {
+        var items = getClaimsDbItems();
+        return {
+            total: items.length,
+            open: items.filter(function (i) { return ['Pending review', 'Under review'].indexOf(String(i && i.status || '')) >= 0; }).length,
+            paid: items.filter(function (i) { return String(i && i.status || '') === 'Paid'; }).length,
+            denied: items.filter(function (i) { return String(i && i.status || '') === 'Denied'; }).length,
+            payouts: items.reduce(function (sum, i) { return sum + parseMoneyLoose(i && i.payout); }, 0),
+            members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length
+        };
+    }
+
+    function getPlanRuleText(plan) {
+        var p = String(plan || '');
+        if (p === 'Pride Sin') return 'single xanax / 1st use only';
+        if (p === 'Wrath Sin') return '1st, 2nd, 3rd, 4th stack only';
+        if (p === 'Envy Sin') return 'full happy jump only';
+        return 'select a plan first';
+    }
+
+    function stackMatchesPlan(plan, stackText) {
+        var t = String(stackText || '').toLowerCase();
+        if (!plan || plan === 'None') return false;
+        if (plan === 'Pride Sin') {
+            return t.indexOf('single') >= 0 || t.indexOf('1st') >= 0 || t.indexOf('first') >= 0 || t === '1';
+        }
+        if (plan === 'Wrath Sin') {
+            return t.indexOf('1st') >= 0 || t.indexOf('2nd') >= 0 || t.indexOf('3rd') >= 0 || t.indexOf('4th') >= 0 || t.indexOf('first') >= 0 || t.indexOf('second') >= 0 || t.indexOf('third') >= 0 || t.indexOf('fourth') >= 0;
+        }
+        if (plan === 'Envy Sin') {
+            return t.indexOf('full') >= 0 || t.indexOf('happy jump') >= 0;
+        }
+        return false;
+    }
+
+    function getPayoutGuide(plan) {
+        var p = String(plan || '');
+        if (p === 'Pride Sin') return 'Guide: small single-use payout';
+        if (p === 'Wrath Sin') return 'Guide: medium stacked-use payout';
+        if (p === 'Envy Sin') return 'Guide: premium full-jump payout';
+        return 'Guide: no plan selected';
+    }
+
+    function getMemberClaimSummary() {
+        var items = getClaimsDbItems().filter(function (item) {
+            return String(item && item.member || '').toLowerCase() === String(sessionName || '').toLowerCase();
+        });
+        return {
+            total: items.length,
+            pending: items.filter(function (i) { return String(i.status || '') === 'Pending review'; }).length,
+            review: items.filter(function (i) { return String(i.status || '') === 'Under review'; }).length,
+            approved: items.filter(function (i) { return String(i.status || '') === 'Approved'; }).length,
+            denied: items.filter(function (i) { return String(i.status || '') === 'Denied'; }).length,
+            paid: items.filter(function (i) { return String(i.status || '') === 'Paid'; }).length,
+        };
+    }
+
+    function getStatusClass(status) {
+        var v = String(status || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        return 'status-' + v.replace(/^-+|-+$/g, '');
+    }
+
     function getServerClaimHistoryItems() {
         try {
             var arr = JSON.parse(serverClaimHistory || '[]');
@@ -581,6 +735,28 @@
                 + '<div class="si-7ds-history-text">' + esc(item.text || '') + '</div>'
             + '</div>';
         }).join('');
+    }
+
+    function bulkSetVisibleClaimsStatus(nextStatus) {
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        var items = getFilteredClaimsDbItems();
+        if (!items.length) {
+            window.alert('No visible claims to update.');
+            return;
+        }
+        items.forEach(function (item) {
+            if (!item || !item.id) return;
+            selectedClaimId = item.id;
+            syncCurrentFromSelectedClaim();
+            claimStatus = nextStatus;
+            upsertCurrentClaimRecord();
+        });
+        saveSession();
+        renderOverlay();
+        window.alert('Updated ' + String(items.length) + ' visible claims to ' + nextStatus + '.');
     }
 
     function addStyles() {
@@ -991,6 +1167,81 @@
   background: #1b0d10 !important;
   color: #f8f0dd !important;
 }
+#si-7ds-overlay .si-7ds-filter-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+}
+#si-7ds-overlay .si-7ds-status-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 28px !important;
+  padding: 0 12px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: .6px !important;
+  text-transform: uppercase !important;
+  border: 1px solid rgba(201,162,80,.18) !important;
+  background: rgba(119,17,22,.22) !important;
+  color: #f1dfab !important;
+}
+#si-7ds-overlay .si-7ds-status-badge.status-pending-review {
+  background: rgba(114, 82, 15, .28) !important;
+}
+#si-7ds-overlay .si-7ds-status-badge.status-under-review {
+  background: rgba(79, 54, 115, .30) !important;
+}
+#si-7ds-overlay .si-7ds-status-badge.status-approved {
+  background: rgba(20, 92, 45, .30) !important;
+}
+#si-7ds-overlay .si-7ds-status-badge.status-denied {
+  background: rgba(120, 26, 32, .32) !important;
+}
+#si-7ds-overlay .si-7ds-status-badge.status-paid {
+  background: rgba(14, 97, 93, .32) !important;
+}
+#si-7ds-overlay .si-7ds-admin-actions-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+#si-7ds-overlay .si-7ds-btn.confirm {
+  background: linear-gradient(180deg, rgba(20, 112, 58, .94), rgba(12, 66, 34, .98)) !important;
+}
+#si-7ds-overlay .si-7ds-admin-note-box {
+  border-radius: 10px !important;
+  border: 1px solid rgba(201,162,80,.14) !important;
+  background: rgba(255,255,255,.02) !important;
+  padding: 10px !important;
+}
+#si-7ds-overlay .si-7ds-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+#si-7ds-overlay .si-7ds-summary-tile {
+  border-radius: 10px !important;
+  border: 1px solid rgba(201,162,80,.14) !important;
+  background: rgba(255,255,255,.02) !important;
+  padding: 10px !important;
+  text-align: center !important;
+}
+#si-7ds-overlay .si-7ds-summary-num {
+  font-size: 16px !important;
+  font-weight: 900 !important;
+  color: #f7e4a7 !important;
+  line-height: 1.1 !important;
+}
+#si-7ds-overlay .si-7ds-summary-label {
+  margin-top: 4px !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  color: rgba(241,223,171,.76) !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+}
 @media (max-width: 520px) {
 
   #si-7ds-launcher-btn {
@@ -1069,28 +1320,27 @@
         if (activeTab === 'overview') {
             return ''
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Welcome to Sinners Insurance</div>'
-                +   '<div class="si-7ds-text">Protect your members, track your coverage, and keep your payouts organized in one place. This overview tab is the main home screen for your insurance system and gives members a quick look at what is active and how to use it.</div>'
+                +   '<div class="si-7ds-card-title">Overview Dashboard</div>'
+                +   '<div class="si-7ds-text">This is the shared insurance dashboard for members and admins. It summarizes claims, payouts, and activity across the current build.</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">What This Does</div>'
+                +   '<div class="si-7ds-card-title">System Stats</div>'
+                +   '<div class="si-7ds-summary-grid">'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().total) + '</div><div class="si-7ds-summary-label">Total Claims</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().open) + '</div><div class="si-7ds-summary-label">Open Claims</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().denied) + '</div><div class="si-7ds-summary-label">Denied</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().members) + '</div><div class="si-7ds-summary-label">Members</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">$' + String(Math.round(getOverviewStats().payouts)) + '</div><div class="si-7ds-summary-label">Payouts</div></div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Plan Rules</div>'
                 +   '<div class="si-7ds-list">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">View your available insurance plans and what each one covers.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Submit and review claims from one themed overlay instead of jumping around.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Keep member coverage, payouts, and future admin settings together in one clean tool.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Pride Sin:</strong> single xanax / 1st use only.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Wrath Sin:</strong> 1st to 4th stack only.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Envy Sin:</strong> full happy jump only.</div></div>'
                 +   '</div>'
-                + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Quick Status</div>'
-                +   '<div class="si-7ds-pillrow">'
-                +     '<span class="si-7ds-pill">4 tabs active</span>'
-                +     '<span class="si-7ds-pill">Launcher online</span>'
-                +     '<span class="si-7ds-pill">7DS theme active</span>'
-                +   '</div>'
-                + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">How to Use</div>'
-                +   '<div class="si-7ds-text">Use <strong>Plans</strong> to view coverage options, <strong>Claims</strong> to handle claim flow, and <strong>Settings</strong> for future admin controls. This Overview tab is your quick start and home page.</div>'
                 + '</div>';
         }
 
@@ -1138,13 +1388,13 @@
 
         if (activeTab === 'claims') {
             syncCurrentFromSelectedClaim();
-            var claimOptions = getClaimsDbItems().length
-                ? getClaimsDbItems().map(function (item) {
+            var claimOptions = getFilteredClaimsDbItems().length
+                ? getFilteredClaimsDbItems().map(function (item) {
                     var label = (item.id || 'No ID') + ' | ' + (item.plan || 'No plan') + ' | ' + (item.status || 'No status');
                     var sel = (item.id === selectedClaimId || (!selectedClaimId && item.id === claimId)) ? ' selected' : '';
                     return '<option value="' + esc(item.id || '') + '"' + sel + '>' + esc(label) + '</option>';
                 }).join('')
-                : '<option value="">No claims yet</option>';
+                : '<option value="">No matching claims</option>';
 
             var memberForm = isMember() && !isAdmin()
                 ? '<div class="si-7ds-form-grid">'
@@ -1211,12 +1461,67 @@
                 +   '<div class="si-7ds-card-title">Claims Center</div>'
                 +   '<div class="si-7ds-text">Members can fill in the claim form directly here. Admins get a read-only review view with status controls, payout amount, and decision notes.</div>'
                 + '</div>'
+                + (isMember() && !isAdmin()
+                +   ? '<div class="si-7ds-card">'
+                +       + '<div class="si-7ds-card-title">Member Dashboard</div>'
+                +       + '<div class="si-7ds-text">Your claims are shown first in the dropdown. Use this box to quickly see your current claim activity.</div>'
+                +       + '<div class="si-7ds-summary-grid">'
+                +         + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().total) + '</div><div class="si-7ds-summary-label">Total</div></div>'
+                +         + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().pending + getMemberClaimSummary().review) + '</div><div class="si-7ds-summary-label">Open</div></div>'
+                +         + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getMemberClaimSummary().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
+                +       + '</div>'
+                +       + '<div class="si-7ds-pillrow">'
+                +         + '<span class="si-7ds-pill">Pending ' + String(getMemberClaimSummary().pending) + '</span>'
+                +         + '<span class="si-7ds-pill">Review ' + String(getMemberClaimSummary().review) + '</span>'
+                +         + '<span class="si-7ds-pill">Approved ' + String(getMemberClaimSummary().approved) + '</span>'
+                +         + '<span class="si-7ds-pill">Denied ' + String(getMemberClaimSummary().denied) + '</span>'
+                +       + '</div>'
+                +     + '</div>'
+                +   : '')
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim Filters</div>'
+                +   '<div class="si-7ds-filter-grid">'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-filter-status">Status Filter</label>'
+                +       '<select id="si-claim-filter-status" class="si-7ds-select">'
+                +         '<option value="all"' + (claimFilterStatus === 'all' ? ' selected' : '') + '>All statuses</option>'
+                +         '<option value="Pending review"' + (claimFilterStatus === 'Pending review' ? ' selected' : '') + '>Pending review</option>'
+                +         '<option value="Under review"' + (claimFilterStatus === 'Under review' ? ' selected' : '') + '>Under review</option>'
+                +         '<option value="Approved"' + (claimFilterStatus === 'Approved' ? ' selected' : '') + '>Approved</option>'
+                +         '<option value="Denied"' + (claimFilterStatus === 'Denied' ? ' selected' : '') + '>Denied</option>'
+                +         '<option value="Paid"' + (claimFilterStatus === 'Paid' ? ' selected' : '') + '>Paid</option>'
+                +       + '</select>'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-filter-member">Member Search</label>'
+                +       '<input id="si-claim-filter-member" class="si-7ds-input" type="text" value="' + esc(claimFilterMember || '') + '" placeholder="Search member name">'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-sort-mode">Sort By</label>'
+                +       '<select id="si-claim-sort-mode" class="si-7ds-select">'
+                +         '<option value="newest"' + (claimSortMode === 'newest' ? ' selected' : '') + '>Newest first</option>'
+                +         '<option value="oldest"' + (claimSortMode === 'oldest' ? ' selected' : '') + '>Oldest first</option>'
+                +         '<option value="member_az"' + (claimSortMode === 'member_az' ? ' selected' : '') + '>Member A-Z</option>'
+                +         '<option value="status"' + (claimSortMode === 'status' ? ' selected' : '') + '>Status order</option>'
+                +       + '</select>'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label">Current Sort</label>'
+                +       '<div class="si-7ds-text">' + esc(claimSortMode || 'newest') + '</div>'
+                +     '</div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="apply-claim-filters">Apply Filters</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="clear-claim-filters">Clear Filters</button>'
+                +   '</div>'
+                + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claim Dropdown</div>'
                 +   '<div class="si-7ds-field">'
                 +     '<label class="si-7ds-label" for="si-claim-select">Select Claim</label>'
                 +     '<select id="si-claim-select" class="si-7ds-select">' + claimOptions + '</select>'
                 +   '</div>'
+                +   '<div class="si-7ds-text"><strong>Visible claims:</strong> ' + String(getFilteredClaimsDbItems().length) + (isMember() && !isAdmin() ? ' (your claims appear first)' : '') + ' | <strong>Sort:</strong> ' + esc(claimSortMode || 'newest') + '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Backend Sync</div>'
@@ -1237,10 +1542,12 @@
                 +   '<div class="si-7ds-card-title">Claim Summary</div>'
                 +   '<div class="si-7ds-text"><strong>Claim ID:</strong> ' + esc(claimId || 'Not assigned yet') + '</div>'
                 +   '<div class="si-7ds-text"><strong>Selected plan:</strong> ' + esc(selectedPlan || 'None') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Claim member:</strong> ' + esc((getSelectedClaimRecord() && getSelectedClaimRecord().member) || sessionName || 'Guest') + '</div>'
                 +   '<div class="si-7ds-text"><strong>Status:</strong> ' + esc(claimStatus || 'Not submitted') + '</div>'
                 + '</div>'
                 + '<div class="si-7ds-claim-box">'
-                +   '<div class="si-7ds-claim-status">Claim Status: ' + claimStatus + '</div>'
+                +   '<div class="si-7ds-claim-status">Claim Status</div>'
+                +   '<div class="si-7ds-pillrow"><span class="si-7ds-status-badge ' + getStatusClass(claimStatus) + '">' + esc(claimStatus || 'Not submitted') + '</span></div>'
                 +   memberForm
                 +   '<div class="si-7ds-plan-actions">' + memberActions + '</div>'
                 + '</div>'
@@ -1451,6 +1758,30 @@
             claimSelect.dataset.bound = '1';
             claimSelect.addEventListener('change', function () { selectClaimById(claimSelect.value); });
         }
+
+        overlay.querySelectorAll('[data-action="bulk-review"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { bulkSetVisibleClaimsStatus('Under review'); });
+        });
+
+        overlay.querySelectorAll('[data-action="bulk-approve"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { bulkSetVisibleClaimsStatus('Approved'); });
+        });
+
+        overlay.querySelectorAll('[data-action="bulk-deny"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { bulkSetVisibleClaimsStatus('Denied'); });
+        });
+
+        overlay.querySelectorAll('[data-action="bulk-pay"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { bulkSetVisibleClaimsStatus('Paid'); });
+        });
 
         overlay.querySelectorAll('[data-action="save-sync-settings"]').forEach(function (btn) {
             if (btn.dataset.bound) return;
