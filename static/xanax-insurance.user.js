@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.2.6
+// @version      2.2.7
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -16,6 +16,7 @@
     var overlay = null;
     var remountTimer = null;
     var activeTab = 'overview';
+    var selectedPlan = 'None';
 
     var TAB_LABELS = {
         overview: 'Overview',
@@ -374,6 +375,36 @@
 #si-7ds-overlay .si-7ds-btn.alt {
   background: linear-gradient(180deg, rgba(60, 12, 16, .92), rgba(24, 7, 10, .96)) !important;
 }
+#si-7ds-overlay .si-7ds-selected-banner {
+  border-radius: 12px !important;
+  border: 1px solid rgba(222,185,90,.24) !important;
+  background: linear-gradient(180deg, rgba(124,19,26,.24), rgba(255,255,255,.02)) !important;
+  padding: 10px 12px !important;
+  color: #f8e6ab !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: .35px !important;
+}
+#si-7ds-overlay .si-7ds-term-box {
+  border-radius: 12px !important;
+  border: 1px solid rgba(201,162,80,.16) !important;
+  background: rgba(255,255,255,.02) !important;
+  padding: 10px !important;
+  display: grid !important;
+  gap: 6px !important;
+}
+#si-7ds-overlay .si-7ds-term-title {
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  color: #f2de9f !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+}
+#si-7ds-overlay .si-7ds-term-text {
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  color: #f8f0dd !important;
+}
 @media (max-width: 520px) {
 
   #si-7ds-launcher-btn {
@@ -480,43 +511,83 @@
         if (activeTab === 'plans') {
             return ''
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Coverage Plans</div>'
-                +   '<div class="si-7ds-text">Choose from three insurance tiers built for different member needs. These are your main plan display boxes and can be edited later with your real pricing and payout numbers.</div>'
+                +   '<div class="si-7ds-card-title">Sin Plans</div>'
+                +   '<div class="si-7ds-text">Plans now use in-overlay selection and real terms panels. Pick a sin plan below and review its coverage without leaving the overlay.</div>'
                 + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Basic Plan</div>'
-                +   '<div class="si-7ds-pillrow">'
-                +     '<span class="si-7ds-pill">Entry tier</span>'
-                +     '<span class="si-7ds-pill">Low cost</span>'
+                + '<div class="si-7ds-selected-banner">Selected plan: <strong>' + selectedPlan + '</strong></div>'
+
+                + '<div class="si-7ds-plan-box">'
+                +   '<div class="si-7ds-plan-top">'
+                +     '<div>'
+                +       '<div class="si-7ds-plan-name">Pride Sin</div>'
+                +       '<div class="si-7ds-plan-tier">Basic coverage</div>'
+                +     '</div>'
+                +     '<span class="si-7ds-pill">1 Xanax</span>'
                 +   '</div>'
-                +   '<div class="si-7ds-list" style="margin-top:10px;">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your starter fee here.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your basic payout amount here.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Best for light coverage with simple claim rules.</div></div>'
+                +   '<div class="si-7ds-plan-grid">'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">Single Xanax</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Tier</div><div class="si-7ds-plan-stat-value">Basic</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Best For</div><div class="si-7ds-plan-stat-value">Light use</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Claim Scope</div><div class="si-7ds-plan-stat-value">1 use only</div></div>'
+                +   '</div>'
+                +   '<div class="si-7ds-term-box">'
+                +     '<div class="si-7ds-term-title">Pride Terms</div>'
+                +     '<div class="si-7ds-term-text">Pride Sin is the basic plan. It protects a single Xanax use and is meant for members who only want light starter coverage.</div>'
+                +     '<div class="si-7ds-term-text">Use this plan when the member wants simple protection, lower scope, and a smaller claim range.</div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Pride Sin">Select Pride</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Pride Sin">Show Terms</button>'
                 +   '</div>'
                 + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Standard Plan</div>'
-                +   '<div class="si-7ds-pillrow">'
-                +     '<span class="si-7ds-pill">Balanced tier</span>'
-                +     '<span class="si-7ds-pill">Most used</span>'
+
+                + '<div class="si-7ds-plan-box">'
+                +   '<div class="si-7ds-plan-top">'
+                +     '<div>'
+                +       '<div class="si-7ds-plan-name">Wrath Sin</div>'
+                +       '<div class="si-7ds-plan-tier">Standard coverage</div>'
+                +     '</div>'
+                +     '<span class="si-7ds-pill">1st to 4th stack</span>'
                 +   '</div>'
-                +   '<div class="si-7ds-list" style="margin-top:10px;">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your mid-tier fee here.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your mid-tier payout amount here.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Good balance between cost, protection, and claim value.</div></div>'
+                +   '<div class="si-7ds-plan-grid">'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">1st-4th Xanax</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Tier</div><div class="si-7ds-plan-stat-value">Standard</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Best For</div><div class="si-7ds-plan-stat-value">Stacking</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Claim Scope</div><div class="si-7ds-plan-stat-value">4 uses</div></div>'
+                +   '</div>'
+                +   '<div class="si-7ds-term-box">'
+                +     '<div class="si-7ds-term-title">Wrath Terms</div>'
+                +     '<div class="si-7ds-term-text">Wrath Sin is the standard plan. It covers the 1st, 2nd, 3rd, and 4th Xanax stack for members building a stronger jump.</div>'
+                +     '<div class="si-7ds-term-text">Use this plan for broader stacked-use coverage and a stronger claim range than Pride.</div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Wrath Sin">Select Wrath</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Wrath Sin">Show Terms</button>'
                 +   '</div>'
                 + '</div>'
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Premium Plan</div>'
-                +   '<div class="si-7ds-pillrow">'
-                +     '<span class="si-7ds-pill">Top tier</span>'
-                +     '<span class="si-7ds-pill">High payout</span>'
+
+                + '<div class="si-7ds-plan-box">'
+                +   '<div class="si-7ds-plan-top">'
+                +     '<div>'
+                +       '<div class="si-7ds-plan-name">Envy Sin</div>'
+                +       '<div class="si-7ds-plan-tier">Premium coverage</div>'
+                +     '</div>'
+                +     '<span class="si-7ds-pill">Full happy jump</span>'
                 +   '</div>'
-                +   '<div class="si-7ds-list" style="margin-top:10px;">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your premium fee here.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your premium payout amount here.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Highest protection tier with stronger member benefits.</div></div>'
+                +   '<div class="si-7ds-plan-grid">'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">Full jump</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Tier</div><div class="si-7ds-plan-stat-value">Premium</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Best For</div><div class="si-7ds-plan-stat-value">Max setup</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Claim Scope</div><div class="si-7ds-plan-stat-value">Full stack</div></div>'
+                +   '</div>'
+                +   '<div class="si-7ds-term-box">'
+                +     '<div class="si-7ds-term-title">Envy Terms</div>'
+                +     '<div class="si-7ds-term-text">Envy Sin is the premium plan. It protects the full happy jump stack for members who want the highest scope of coverage.</div>'
+                +     '<div class="si-7ds-term-text">Use this plan when the member wants maximum protection and the broadest claim range.</div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select Envy</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Envy Sin">Show Terms</button>'
                 +   '</div>'
                 + '</div>';
         }
@@ -526,6 +597,10 @@
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claims Center</div>'
                 +   '<div class="si-7ds-text">Submit, review, and track insurance claims here. This tab is the main place for members to understand how claims move through the system and what details are needed for a payout.</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Selected Coverage</div>'
+                +   '<div class="si-7ds-text">Current selected plan: <strong>' + selectedPlan + '</strong></div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claim Flow</div>'
@@ -596,17 +671,27 @@
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () {
-                var plan = btn.getAttribute('data-plan') || 'Plan';
-                window.alert(plan + ' selected. Next step is wiring this into claims or saved member choice.');
+                selectedPlan = btn.getAttribute('data-plan') || 'Plan';
+                renderOverlay();
             });
         });
 
-        overlay.querySelectorAll('[data-action="plan-info"]').forEach(function (btn) {
+        overlay.querySelectorAll('[data-action="terms-plan"]').forEach(function (btn) {
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () {
                 var plan = btn.getAttribute('data-plan') || 'Plan';
-                window.alert(plan + ' terms button clicked. Next step is a real terms modal or terms box.');
+                var cardTitle = plan === 'Pride Sin' ? 'Pride Terms'
+                    : plan === 'Wrath Sin' ? 'Wrath Terms'
+                    : 'Envy Terms';
+                activeTab = 'plans';
+                renderOverlay();
+                var boxes = overlay.querySelectorAll('.si-7ds-term-title');
+                boxes.forEach(function (el) {
+                    if (el.textContent === cardTitle && el.scrollIntoView) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
             });
         });
     }
