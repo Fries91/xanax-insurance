@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.3.5
+// @version      2.3.6
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -746,6 +746,74 @@
 
         if (activeTab === 'claims') {
             syncCurrentFromSelectedClaim();
+            var claimOptions = getClaimsDbItems().length
+                ? getClaimsDbItems().map(function (item) {
+                    var label = (item.id || 'No ID') + ' | ' + (item.plan || 'No plan') + ' | ' + (item.status || 'No status');
+                    var sel = (item.id === selectedClaimId || (!selectedClaimId && item.id === claimId)) ? ' selected' : '';
+                    return '<option value="' + esc(item.id || '') + '"' + sel + '>' + esc(label) + '</option>';
+                }).join('')
+                : '<option value="">No claims yet</option>';
+
+            var memberForm = isMember() && !isAdmin()
+                ? '<div class="si-7ds-form-grid">'
+                    + '<div class="si-7ds-field">'
+                      + '<label class="si-7ds-label" for="si-claim-stack">Stack Type</label>'
+                      + '<input id="si-claim-stack" class="si-7ds-input" type="text" placeholder="Example: 2nd Xanax stack or full happy jump" value="' + esc(claimStack) + '">'
+                    + '</div>'
+                    + '<div class="si-7ds-field">'
+                      + '<label class="si-7ds-label" for="si-claim-loss">Loss Details</label>'
+                      + '<input id="si-claim-loss" class="si-7ds-input" type="text" placeholder="What was lost?" value="' + esc(claimLoss) + '">'
+                    + '</div>'
+                    + '<div class="si-7ds-field">'
+                      + '<label class="si-7ds-label" for="si-claim-proof">Proof / Screenshot Note</label>'
+                      + '<input id="si-claim-proof" class="si-7ds-input" type="text" placeholder="Proof link or screenshot note" value="' + esc(claimProof) + '">'
+                    + '</div>'
+                    + '<div class="si-7ds-field">'
+                      + '<label class="si-7ds-label" for="si-claim-note">Claim Note</label>'
+                      + '<textarea id="si-claim-note" class="si-7ds-textarea" placeholder="Add your claim details here">' + esc(claimNote) + '</textarea>'
+                    + '</div>'
+                  + '</div>'
+                : '<div class="si-7ds-note-box"><div class="si-7ds-text">'
+                    + (isAdmin()
+                        ? '<strong>Admin review mode:</strong> member claim fields are read-only below.'
+                        : '<strong>Member login required:</strong> sign in as a member to edit claim fields.')
+                  + '</div></div>';
+
+            var memberActions = isMember() && !isAdmin()
+                ? '<button type="button" class="si-7ds-btn" data-action="submit-claim">Submit Claim</button>'
+                : '';
+
+            var adminPanel = isAdmin()
+                ? '<div class="si-7ds-card">'
+                    + '<div class="si-7ds-card-title">Admin Review Panel</div>'
+                    + '<div class="si-7ds-admin-panel">'
+                      + '<div class="si-7ds-field">'
+                        + '<label class="si-7ds-label" for="si-payout-amount">Payout Amount</label>'
+                        + '<input id="si-payout-amount" class="si-7ds-input" type="text" placeholder="Example: $5,000,000" value="' + esc(payoutAmount) + '">'
+                      + '</div>'
+                      + '<div class="si-7ds-field">'
+                        + '<label class="si-7ds-label" for="si-decision-note">Decision Note</label>'
+                        + '<textarea id="si-decision-note" class="si-7ds-textarea" placeholder="Admin decision notes">' + esc(decisionNote) + '</textarea>'
+                      + '</div>'
+                      + '<div class="si-7ds-plan-actions">'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="review-claim">Mark Review</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="approve-claim">Approve</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="deny-claim">Deny</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="pay-claim">Mark Paid</button>'
+                      + '</div>'
+                    + '</div>'
+                  + '</div>'
+                : '';
+
+            var historyItems = getClaimHistoryItems().length
+                ? getClaimHistoryItems().map(function (item) {
+                    return '<div class="si-7ds-history-item">'
+                        + '<div class="si-7ds-history-time">' + esc(item.at || '') + '</div>'
+                        + '<div class="si-7ds-history-text">' + esc(item.text || '') + '</div>'
+                    + '</div>';
+                }).join('')
+                : '<div class="si-7ds-list-item"><div class="si-7ds-text">No history yet.</div></div>';
+
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claims Center</div>'
@@ -755,15 +823,7 @@
                 +   '<div class="si-7ds-card-title">Claim Dropdown</div>'
                 +   '<div class="si-7ds-field">'
                 +     '<label class="si-7ds-label" for="si-claim-select">Select Claim</label>'
-                +     '<select id="si-claim-select" class="si-7ds-select">'
-                +       + (getClaimsDbItems().length
-                +           ? getClaimsDbItems().map(function (item) {
-                +               var label = (item.id || 'No ID') + ' | ' + (item.plan || 'No plan') + ' | ' + (item.status || 'No status');
-                +               var sel = (item.id === selectedClaimId || (!selectedClaimId && item.id === claimId)) ? ' selected' : '';
-                +               return '<option value="' + esc(item.id || '') + '"' + sel + '>' + esc(label) + '</option>';
-                +             }).join('')
-                +           : '<option value="">No claims yet</option>')
-                +     + '</select>'
+                +     '<select id="si-claim-select" class="si-7ds-select">' + claimOptions + '</select>'
                 +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
@@ -778,35 +838,8 @@
                 + '</div>'
                 + '<div class="si-7ds-claim-box">'
                 +   '<div class="si-7ds-claim-status">Claim Status: ' + claimStatus + '</div>'
-                +   (isMember() && !isAdmin()
-                +       ? '<div class="si-7ds-form-grid">'
-                +           + '<div class="si-7ds-field">'
-                +             + '<label class="si-7ds-label" for="si-claim-stack">Stack Type</label>'
-                +             + '<input id="si-claim-stack" class="si-7ds-input" type="text" placeholder="Example: 2nd Xanax stack or full happy jump" value="' + esc(claimStack) + '">'
-                +           + '</div>'
-                +           + '<div class="si-7ds-field">'
-                +             + '<label class="si-7ds-label" for="si-claim-loss">Loss Details</label>'
-                +             + '<input id="si-claim-loss" class="si-7ds-input" type="text" placeholder="What was lost?" value="' + esc(claimLoss) + '">'
-                +           + '</div>'
-                +           + '<div class="si-7ds-field">'
-                +             + '<label class="si-7ds-label" for="si-claim-proof">Proof / Screenshot Note</label>'
-                +             + '<input id="si-claim-proof" class="si-7ds-input" type="text" placeholder="Proof link or screenshot note" value="' + esc(claimProof) + '">'
-                +           + '</div>'
-                +           + '<div class="si-7ds-field">'
-                +             + '<label class="si-7ds-label" for="si-claim-note">Claim Note</label>'
-                +             + '<textarea id="si-claim-note" class="si-7ds-textarea" placeholder="Add your claim details here">' + esc(claimNote) + '</textarea>'
-                +           + '</div>'
-                +         + '</div>'
-                +       : '<div class="si-7ds-note-box"><div class="si-7ds-text">' 
-                +           + (isAdmin()
-                +             ? '<strong>Admin review mode:</strong> member claim fields are read-only below.'
-                +             : '<strong>Member login required:</strong> sign in as a member to edit claim fields.')
-                +         + '</div></div>')
-                +   '<div class="si-7ds-plan-actions">'
-                +     (isMember() && !isAdmin()
-                +         ? '<button type="button" class="si-7ds-btn" data-action="submit-claim">Submit Claim</button>'
-                +         : '')
-                +   '</div>'
+                +   memberForm
+                +   '<div class="si-7ds-plan-actions">' + memberActions + '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Saved Claim Details</div>'
@@ -817,43 +850,12 @@
                 +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Note:</strong> ' + esc(claimNote || 'Not set') + '</div></div>'
                 +   '</div>'
                 + '</div>'
-                + (isAdmin()
-                +   ? '<div class="si-7ds-card">'
-                +       + '<div class="si-7ds-card-title">Admin Review Panel</div>'
-                +       + '<div class="si-7ds-admin-panel">'
-                +         + '<div class="si-7ds-field">'
-                +           + '<label class="si-7ds-label" for="si-payout-amount">Payout Amount</label>'
-                +           + '<input id="si-payout-amount" class="si-7ds-input" type="text" placeholder="Example: $5,000,000" value="' + esc(payoutAmount) + '">'
-                +         + '</div>'
-                +         + '<div class="si-7ds-field">'
-                +           + '<label class="si-7ds-label" for="si-decision-note">Decision Note</label>'
-                +           + '<textarea id="si-decision-note" class="si-7ds-textarea" placeholder="Admin decision notes">' + esc(decisionNote) + '</textarea>'
-                +         + '</div>'
-                +         + '<div class="si-7ds-plan-actions">'
-                +           + '<button type="button" class="si-7ds-btn alt" data-action="review-claim">Mark Review</button>'
-                +           + '<button type="button" class="si-7ds-btn alt" data-action="approve-claim">Approve</button>'
-                +           + '<button type="button" class="si-7ds-btn alt" data-action="deny-claim">Deny</button>'
-                +           + '<button type="button" class="si-7ds-btn alt" data-action="pay-claim">Mark Paid</button>'
-                +         + '</div>'
-                +       + '</div>'
-                +     + '</div>'
-                +   : '')
+                + adminPanel
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claim History / Payout Log</div>'
-                +   '<div class="si-7ds-list">'
-                +     (getClaimHistoryItems().length
-                +         ? getClaimHistoryItems().map(function (item) {
-                +             return '<div class="si-7ds-history-item">'
-                +                 + '<div class="si-7ds-history-time">' + esc(item.at || '') + '</div>'
-                +                 + '<div class="si-7ds-history-text">' + esc(item.text || '') + '</div>'
-                +             + '</div>';
-                +           }).join('')
-                +         : '<div class="si-7ds-list-item"><div class="si-7ds-text">No history yet.</div></div>')
-                +   '</div>'
+                +   '<div class="si-7ds-list">' + historyItems + '</div>'
                 +   '<div class="si-7ds-plan-actions">'
-                +     (isAdmin()
-                +         ? '<button type="button" class="si-7ds-btn alt" data-action="clear-history">Clear Log</button>'
-                +         : '')
+                +     (isAdmin() ? '<button type="button" class="si-7ds-btn alt" data-action="clear-history">Clear Log</button>' : '')
                 +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
