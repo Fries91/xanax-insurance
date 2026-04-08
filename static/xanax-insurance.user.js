@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.2.0
+// @version      2.2.1
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -375,16 +375,28 @@
         if (activeTab === 'overview') {
             return ''
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Overview</div>'
-                +   '<div class="si-7ds-text">Your 4-tab shell is now live on the clean bottom-left launcher build. This is the starting home tab for Sinners Insurance.</div>'
+                +   '<div class="si-7ds-card-title">Welcome to Sinners Insurance</div>'
+                +   '<div class="si-7ds-text">Protect your members, track your coverage, and keep your payouts organized in one place. This overview tab is the main home screen for your insurance system and gives members a quick look at what is active and how to use it.</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Current Layout</div>'
+                +   '<div class="si-7ds-card-title">What This Does</div>'
+                +   '<div class="si-7ds-list">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">View your available insurance plans and what each one covers.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Submit and review claims from one themed overlay instead of jumping around.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Keep member coverage, payouts, and future admin settings together in one clean tool.</div></div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Quick Status</div>'
                 +   '<div class="si-7ds-pillrow">'
                 +     '<span class="si-7ds-pill">4 tabs active</span>'
-                +     '<span class="si-7ds-pill">Bottom-left launcher</span>'
-                +     '<span class="si-7ds-pill">7DS theme</span>'
+                +     '<span class="si-7ds-pill">Launcher online</span>'
+                +     '<span class="si-7ds-pill">7DS theme active</span>'
                 +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">How to Use</div>'
+                +   '<div class="si-7ds-text">Use <strong>Plans</strong> to view coverage options, <strong>Claims</strong> to handle claim flow, and <strong>Settings</strong> for future admin controls. This Overview tab is your quick start and home page.</div>'
                 + '</div>';
         }
 
