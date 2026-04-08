@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.3.0
+// @version      2.3.5
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -45,6 +45,12 @@
             GM_setValue('si_claim_loss', claimLoss || '');
             GM_setValue('si_claim_proof', claimProof || '');
             GM_setValue('si_claim_stack', claimStack || '');
+            GM_setValue('si_claim_history', claimHistory || '[]');
+            GM_setValue('si_claim_id', claimId || '');
+            GM_setValue('si_payout_amount', payoutAmount || '');
+            GM_setValue('si_decision_note', decisionNote || '');
+            GM_setValue('si_claims_db', claimsDb || '[]');
+            GM_setValue('si_selected_claim_id', selectedClaimId || '');
         }
     }
 
@@ -103,10 +109,108 @@
             window.alert('Fill in all claim fields before submitting.');
             return;
         }
+        if (!claimId) claimId = makeClaimId();
+        selectedClaimId = claimId;
         claimStatus = 'Pending review';
+        upsertCurrentClaimRecord();
+        addClaimHistoryEntry((sessionName || 'Member') + ' submitted claim ' + claimId + ' for ' + (selectedPlan || 'No plan') + '.');
         saveSession();
         activeTab = 'claims';
         renderOverlay();
+    }
+
+    function getClaimsDbItems() {
+        try {
+            var arr = JSON.parse(claimsDb || '[]');
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveClaimsDbItems(arr) {
+        claimsDb = JSON.stringify(Array.isArray(arr) ? arr : []);
+        saveSession();
+    }
+
+    function getSelectedClaimRecord() {
+        var items = getClaimsDbItems();
+        var found = items.find(function (item) { return item && item.id === selectedClaimId; });
+        if (found) return found;
+        if (items.length) {
+            selectedClaimId = items[0].id || '';
+            saveSession();
+            return items[0];
+        }
+        return null;
+    }
+
+    function syncCurrentFromSelectedClaim() {
+        var rec = getSelectedClaimRecord();
+        if (!rec) return;
+        claimId = rec.id || '';
+        selectedClaimId = rec.id || '';
+        selectedPlan = rec.plan || selectedPlan || 'None';
+        claimStatus = rec.status || 'Not submitted';
+        claimNote = rec.note || '';
+        claimLoss = rec.loss || '';
+        claimProof = rec.proof || '';
+        claimStack = rec.stack || '';
+        payoutAmount = rec.payout || '';
+        decisionNote = rec.decision || '';
+    }
+
+    function upsertCurrentClaimRecord() {
+        if (!claimId) return;
+        var items = getClaimsDbItems();
+        var idx = items.findIndex(function (item) { return item && item.id === claimId; });
+        var rec = {
+            id: claimId,
+            plan: selectedPlan || 'None',
+            status: claimStatus || 'Not submitted',
+            note: claimNote || '',
+            loss: claimLoss || '',
+            proof: claimProof || '',
+            stack: claimStack || '',
+            payout: payoutAmount || '',
+            decision: decisionNote || '',
+            member: sessionName || 'Guest',
+            updatedAt: new Date().toLocaleString()
+        };
+        if (idx >= 0) items[idx] = rec;
+        else items.unshift(rec);
+        selectedClaimId = claimId;
+        saveClaimsDbItems(items.slice(0, 25));
+    }
+
+    function selectClaimById(id) {
+        selectedClaimId = id || '';
+        syncCurrentFromSelectedClaim();
+        saveSession();
+        renderOverlay();
+    }
+
+    function makeClaimId() {
+        return 'SIN-' + Date.now().toString().slice(-8);
+    }
+
+    function getClaimHistoryItems() {
+        try {
+            var arr = JSON.parse(claimHistory || '[]');
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function addClaimHistoryEntry(text) {
+        var arr = getClaimHistoryItems();
+        arr.unshift({
+            at: new Date().toLocaleString(),
+            text: text
+        });
+        claimHistory = JSON.stringify(arr.slice(0, 12));
+        saveSession();
     }
 
     function updateClaimField(field, value) {
@@ -114,7 +218,20 @@
         if (field === 'loss') claimLoss = value || '';
         if (field === 'proof') claimProof = value || '';
         if (field === 'stack') claimStack = value || '';
+        if (field === 'payout') payoutAmount = value || '';
+        if (field === 'decision') decisionNote = value || '';
+        upsertCurrentClaimRecord();
         saveSession();
+    }
+
+    function clearClaimHistory() {
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        claimHistory = '[]';
+        saveSession();
+        renderOverlay();
     }
 
     function adminSetClaimStatus(nextStatus) {
@@ -123,6 +240,8 @@
             return;
         }
         claimStatus = nextStatus;
+        upsertCurrentClaimRecord();
+        addClaimHistoryEntry((sessionName || 'Admin') + ' changed claim ' + (claimId || 'unassigned') + ' status to ' + nextStatus + (decisionNote ? ' | Note: ' + decisionNote : '') + (payoutAmount ? ' | Payout: ' + payoutAmount : '') + '.');
         saveSession();
         activeTab = 'claims';
         renderOverlay();
@@ -626,45 +745,67 @@
         }
 
         if (activeTab === 'claims') {
+            syncCurrentFromSelectedClaim();
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claims Center</div>'
-                +   '<div class="si-7ds-text">Members can fill in the claim form directly here. Admins can review the saved claim details and move the claim through status steps.</div>'
+                +   '<div class="si-7ds-text">Members can fill in the claim form directly here. Admins get a read-only review view with status controls, payout amount, and decision notes.</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim Dropdown</div>'
+                +   '<div class="si-7ds-field">'
+                +     '<label class="si-7ds-label" for="si-claim-select">Select Claim</label>'
+                +     '<select id="si-claim-select" class="si-7ds-select">'
+                +       + (getClaimsDbItems().length
+                +           ? getClaimsDbItems().map(function (item) {
+                +               var label = (item.id || 'No ID') + ' | ' + (item.plan || 'No plan') + ' | ' + (item.status || 'No status');
+                +               var sel = (item.id === selectedClaimId || (!selectedClaimId && item.id === claimId)) ? ' selected' : '';
+                +               return '<option value="' + esc(item.id || '') + '"' + sel + '>' + esc(label) + '</option>';
+                +             }).join('')
+                +           : '<option value="">No claims yet</option>')
+                +     + '</select>'
+                +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Access State</div>'
                 +   '<div class="si-7ds-text">Signed in as: <strong>' + sessionName + '</strong> (' + sessionRole + ')</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Selected Coverage</div>'
-                +   '<div class="si-7ds-text">Current selected plan: <strong>' + selectedPlan + '</strong></div>'
+                +   '<div class="si-7ds-card-title">Claim Summary</div>'
+                +   '<div class="si-7ds-text"><strong>Claim ID:</strong> ' + esc(claimId || 'Not assigned yet') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Selected plan:</strong> ' + esc(selectedPlan || 'None') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Status:</strong> ' + esc(claimStatus || 'Not submitted') + '</div>'
                 + '</div>'
                 + '<div class="si-7ds-claim-box">'
                 +   '<div class="si-7ds-claim-status">Claim Status: ' + claimStatus + '</div>'
-                +   '<div class="si-7ds-form-grid">'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-stack">Stack Type</label>'
-                +       '<input id="si-claim-stack" class="si-7ds-input" type="text" placeholder="Example: 2nd Xanax stack or full happy jump" value="' + esc(claimStack) + '">'
-                +     '</div>'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-loss">Loss Details</label>'
-                +       '<input id="si-claim-loss" class="si-7ds-input" type="text" placeholder="What was lost?" value="' + esc(claimLoss) + '">'
-                +     '</div>'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-proof">Proof / Screenshot Note</label>'
-                +       '<input id="si-claim-proof" class="si-7ds-input" type="text" placeholder="Proof link or screenshot note" value="' + esc(claimProof) + '">'
-                +     '</div>'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-note">Claim Note</label>'
-                +       '<textarea id="si-claim-note" class="si-7ds-textarea" placeholder="Add your claim details here">' + esc(claimNote) + '</textarea>'
-                +     '</div>'
-                +   '</div>'
+                +   (isMember() && !isAdmin()
+                +       ? '<div class="si-7ds-form-grid">'
+                +           + '<div class="si-7ds-field">'
+                +             + '<label class="si-7ds-label" for="si-claim-stack">Stack Type</label>'
+                +             + '<input id="si-claim-stack" class="si-7ds-input" type="text" placeholder="Example: 2nd Xanax stack or full happy jump" value="' + esc(claimStack) + '">'
+                +           + '</div>'
+                +           + '<div class="si-7ds-field">'
+                +             + '<label class="si-7ds-label" for="si-claim-loss">Loss Details</label>'
+                +             + '<input id="si-claim-loss" class="si-7ds-input" type="text" placeholder="What was lost?" value="' + esc(claimLoss) + '">'
+                +           + '</div>'
+                +           + '<div class="si-7ds-field">'
+                +             + '<label class="si-7ds-label" for="si-claim-proof">Proof / Screenshot Note</label>'
+                +             + '<input id="si-claim-proof" class="si-7ds-input" type="text" placeholder="Proof link or screenshot note" value="' + esc(claimProof) + '">'
+                +           + '</div>'
+                +           + '<div class="si-7ds-field">'
+                +             + '<label class="si-7ds-label" for="si-claim-note">Claim Note</label>'
+                +             + '<textarea id="si-claim-note" class="si-7ds-textarea" placeholder="Add your claim details here">' + esc(claimNote) + '</textarea>'
+                +           + '</div>'
+                +         + '</div>'
+                +       : '<div class="si-7ds-note-box"><div class="si-7ds-text">' 
+                +           + (isAdmin()
+                +             ? '<strong>Admin review mode:</strong> member claim fields are read-only below.'
+                +             : '<strong>Member login required:</strong> sign in as a member to edit claim fields.')
+                +         + '</div></div>')
                 +   '<div class="si-7ds-plan-actions">'
-                +     '<button type="button" class="si-7ds-btn" data-action="submit-claim">Submit Claim</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="review-claim">Mark Review</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="approve-claim">Approve</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="deny-claim">Deny</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="pay-claim">Mark Paid</button>'
+                +     (isMember() && !isAdmin()
+                +         ? '<button type="button" class="si-7ds-btn" data-action="submit-claim">Submit Claim</button>'
+                +         : '')
                 +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
@@ -676,11 +817,51 @@
                 +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Note:</strong> ' + esc(claimNote || 'Not set') + '</div></div>'
                 +   '</div>'
                 + '</div>'
+                + (isAdmin()
+                +   ? '<div class="si-7ds-card">'
+                +       + '<div class="si-7ds-card-title">Admin Review Panel</div>'
+                +       + '<div class="si-7ds-admin-panel">'
+                +         + '<div class="si-7ds-field">'
+                +           + '<label class="si-7ds-label" for="si-payout-amount">Payout Amount</label>'
+                +           + '<input id="si-payout-amount" class="si-7ds-input" type="text" placeholder="Example: $5,000,000" value="' + esc(payoutAmount) + '">'
+                +         + '</div>'
+                +         + '<div class="si-7ds-field">'
+                +           + '<label class="si-7ds-label" for="si-decision-note">Decision Note</label>'
+                +           + '<textarea id="si-decision-note" class="si-7ds-textarea" placeholder="Admin decision notes">' + esc(decisionNote) + '</textarea>'
+                +         + '</div>'
+                +         + '<div class="si-7ds-plan-actions">'
+                +           + '<button type="button" class="si-7ds-btn alt" data-action="review-claim">Mark Review</button>'
+                +           + '<button type="button" class="si-7ds-btn alt" data-action="approve-claim">Approve</button>'
+                +           + '<button type="button" class="si-7ds-btn alt" data-action="deny-claim">Deny</button>'
+                +           + '<button type="button" class="si-7ds-btn alt" data-action="pay-claim">Mark Paid</button>'
+                +         + '</div>'
+                +       + '</div>'
+                +     + '</div>'
+                +   : '')
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim History / Payout Log</div>'
+                +   '<div class="si-7ds-list">'
+                +     (getClaimHistoryItems().length
+                +         ? getClaimHistoryItems().map(function (item) {
+                +             return '<div class="si-7ds-history-item">'
+                +                 + '<div class="si-7ds-history-time">' + esc(item.at || '') + '</div>'
+                +                 + '<div class="si-7ds-history-text">' + esc(item.text || '') + '</div>'
+                +             + '</div>';
+                +           }).join('')
+                +         : '<div class="si-7ds-list-item"><div class="si-7ds-text">No history yet.</div></div>')
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     (isAdmin()
+                +         ? '<button type="button" class="si-7ds-btn alt" data-action="clear-history">Clear Log</button>'
+                +         : '')
+                +   '</div>'
+                + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Role Rules</div>'
                 +   '<div class="si-7ds-list">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Members:</strong> Fill in the form and submit claims after logging in and choosing a plan.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Admins:</strong> Review the saved details and move claims into review, approve, deny, or mark paid.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Members:</strong> Can edit fields and submit claims after logging in and choosing a plan.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Admins:</strong> Can review saved details, add payout amounts, write decision notes, and move claims into review, approve, deny, or mark paid.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Guests:</strong> Can view saved details but cannot edit or submit.</div></div>'
                 +   '</div>'
                 + '</div>';
         }
@@ -791,6 +972,7 @@
     }
 
     function boot() {
+        syncCurrentFromSelectedClaim();
         mount();
         startRemountWatch();
     }
