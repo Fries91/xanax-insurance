@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.2.5
+// @version      2.2.6
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -298,7 +298,84 @@
   font-size: 12px !important;
   color: #f8f0dd !important;
 }
+#si-7ds-overlay .si-7ds-plan-box {
+  border-radius: 14px !important;
+  border: 1px solid rgba(201, 162, 80, .20) !important;
+  background: linear-gradient(180deg, rgba(95, 14, 20, .22), rgba(255,255,255,.02)) !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,.20) !important;
+  padding: 12px !important;
+  display: grid !important;
+  gap: 10px !important;
+}
+#si-7ds-overlay .si-7ds-plan-top {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+}
+#si-7ds-overlay .si-7ds-plan-name {
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  color: #f2de9f !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+}
+#si-7ds-overlay .si-7ds-plan-tier {
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  color: rgba(241, 223, 171, .78) !important;
+  text-transform: uppercase !important;
+  letter-spacing: .8px !important;
+}
+#si-7ds-overlay .si-7ds-plan-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+#si-7ds-overlay .si-7ds-plan-stat {
+  border-radius: 10px !important;
+  border: 1px solid rgba(201,162,80,.12) !important;
+  background: rgba(255,255,255,.02) !important;
+  padding: 8px 9px !important;
+}
+#si-7ds-overlay .si-7ds-plan-stat-label {
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  color: rgba(241,223,171,.72) !important;
+  text-transform: uppercase !important;
+  letter-spacing: .75px !important;
+  margin-bottom: 4px !important;
+}
+#si-7ds-overlay .si-7ds-plan-stat-value {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: #f8f0dd !important;
+}
+#si-7ds-overlay .si-7ds-plan-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+#si-7ds-overlay .si-7ds-btn {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  min-height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(201,162,80,.24) !important;
+  background: linear-gradient(180deg, rgba(124, 19, 26, .95), rgba(64, 10, 15, .98)) !important;
+  color: #f7e4a7 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: .55px !important;
+  cursor: pointer !important;
+}
+#si-7ds-overlay .si-7ds-btn.alt {
+  background: linear-gradient(180deg, rgba(60, 12, 16, .92), rgba(24, 7, 10, .96)) !important;
+}
 @media (max-width: 520px) {
+
   #si-7ds-launcher-btn {
     left: 0 !important;
     bottom: 0 !important;
@@ -512,6 +589,24 @@
             btn.addEventListener('click', function () {
                 activeTab = btn.getAttribute('data-tab') || 'overview';
                 renderOverlay();
+            });
+        });
+
+        overlay.querySelectorAll('[data-action="select-plan"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var plan = btn.getAttribute('data-plan') || 'Plan';
+                window.alert(plan + ' selected. Next step is wiring this into claims or saved member choice.');
+            });
+        });
+
+        overlay.querySelectorAll('[data-action="plan-info"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var plan = btn.getAttribute('data-plan') || 'Plan';
+                window.alert(plan + ' terms button clicked. Next step is a real terms modal or terms box.');
             });
         });
     }
