@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.2.3
+// @version      2.2.4
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -447,8 +447,8 @@
         if (activeTab === 'claims') {
             return ''
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Claims</div>'
-                +   '<div class="si-7ds-text">This tab is ready for claim intake, payout logs, claim status, or member request forms.</div>'
+                +   '<div class="si-7ds-card-title">Claims Center</div>'
+                +   '<div class="si-7ds-text">Submit, review, and track insurance claims here. This tab is the main place for members to understand how claims move through the system and what details are needed for a payout.</div>'
                 + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claim Flow</div>'
@@ -458,6 +458,29 @@
                 +     '<span class="si-7ds-pill">Approve</span>'
                 +     '<span class="si-7ds-pill">Payout</span>'
                 +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Required Claim Details</div>'
+                +   '<div class="si-7ds-list">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Member:</strong> Name or ID of the insured member filing the claim.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Plan:</strong> Pride Sin, Wrath Sin, or Envy Sin.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Loss:</strong> What was lost and what stack or jump it affected.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Proof:</strong> Screenshots, logs, or notes to support the claim review.</div></div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim Status Board</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Pending</span>'
+                +     '<span class="si-7ds-pill">Under review</span>'
+                +     '<span class="si-7ds-pill">Approved</span>'
+                +     '<span class="si-7ds-pill">Denied</span>'
+                +     '<span class="si-7ds-pill">Paid</span>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Payout Notes</div>'
+                +   '<div class="si-7ds-text">Use this area later for claim buttons, claim forms, payout logs, and admin review actions. Right now it acts as the structure box for the full claim system you will build next.</div>'
                 + '</div>';
         }
 
