@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.2.1
+// @version      2.2.3
 // @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -403,11 +403,43 @@
         if (activeTab === 'plans') {
             return ''
                 + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Plans</div>'
-                +   '<div class="si-7ds-list">'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Starter coverage slot ready for your first plan box.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Standard coverage slot ready for pricing, perks, and terms.</div></div>'
-                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Premium coverage slot ready for your higher tier package details.</div></div>'
+                +   '<div class="si-7ds-card-title">Coverage Plans</div>'
+                +   '<div class="si-7ds-text">Choose from three insurance tiers built for different member needs. These are your main plan display boxes and can be edited later with your real pricing and payout numbers.</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Basic Plan</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Entry tier</span>'
+                +     '<span class="si-7ds-pill">Low cost</span>'
+                +   '</div>'
+                +   '<div class="si-7ds-list" style="margin-top:10px;">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your starter fee here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your basic payout amount here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Best for light coverage with simple claim rules.</div></div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Standard Plan</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Balanced tier</span>'
+                +     '<span class="si-7ds-pill">Most used</span>'
+                +   '</div>'
+                +   '<div class="si-7ds-list" style="margin-top:10px;">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your mid-tier fee here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your mid-tier payout amount here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Good balance between cost, protection, and claim value.</div></div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Premium Plan</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Top tier</span>'
+                +     '<span class="si-7ds-pill">High payout</span>'
+                +   '</div>'
+                +   '<div class="si-7ds-list" style="margin-top:10px;">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Price:</strong> Set your premium fee here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Payout:</strong> Set your premium payout amount here.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text"><strong>Rules:</strong> Highest protection tier with stronger member benefits.</div></div>'
                 +   '</div>'
                 + '</div>';
         }
