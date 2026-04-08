@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Sinner's Insurance 7DS Minimal Header
+// @name         Sinner's Insurance 7DS Tabs
 // @namespace    fries91-xanax-insurance
-// @version      2.1.1
-// @description  Minimal 7 Deadly Sins themed Torn bottom-left button with themed overlay
+// @version      2.2.0
+// @description  Sinner's Insurance bottom-left launcher with 4-tab 7 Deadly Sins themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @run-at       document-idle
@@ -15,6 +15,14 @@
     var launcherBar = null;
     var overlay = null;
     var remountTimer = null;
+    var activeTab = 'overview';
+
+    var TAB_LABELS = {
+        overview: 'Overview',
+        plans: 'Plans',
+        claims: 'Claims',
+        settings: 'Settings'
+    };
 
     function addStyles() {
         if (document.getElementById('si-7ds-style-flag')) return;
@@ -46,8 +54,7 @@
   padding: 0 10px !important;
   border-radius: 8px !important;
   border: 1px solid rgba(205, 164, 74, .46) !important;
-  background:
-    linear-gradient(180deg, rgba(82, 10, 14, .88), rgba(44, 6, 9, .92)) !important;
+  background: linear-gradient(180deg, rgba(82, 10, 14, .88), rgba(44, 6, 9, .92)) !important;
   box-shadow:
     0 0 0 1px rgba(255,255,255,.03) inset,
     0 6px 16px rgba(0,0,0,.22),
@@ -182,6 +189,37 @@
   cursor: pointer !important;
   box-shadow: 0 6px 16px rgba(0,0,0,.28) !important;
 }
+#si-7ds-overlay .si-7ds-tabrow {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  padding: 12px 14px 0 !important;
+}
+#si-7ds-overlay .si-7ds-tab {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  min-height: 36px !important;
+  padding: 0 8px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(201, 162, 80, .18) !important;
+  background: linear-gradient(180deg, rgba(62, 12, 16, .82), rgba(24, 7, 10, .92)) !important;
+  color: rgba(241, 223, 171, .86) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: .45px !important;
+  text-transform: uppercase !important;
+  cursor: pointer !important;
+  box-shadow: 0 6px 14px rgba(0,0,0,.18) !important;
+}
+#si-7ds-overlay .si-7ds-tab.active {
+  border-color: rgba(222,185,90,.42) !important;
+  background: linear-gradient(180deg, rgba(124, 19, 26, .95), rgba(64, 10, 15, .98)) !important;
+  color: #f8e6ab !important;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.03) inset,
+    0 0 14px rgba(176, 27, 35, .24),
+    0 8px 18px rgba(0,0,0,.25) !important;
+}
 #si-7ds-overlay .si-7ds-body {
   padding: 14px !important;
   overflow: auto !important;
@@ -228,6 +266,38 @@
   letter-spacing: .55px !important;
   text-transform: uppercase !important;
 }
+#si-7ds-overlay .si-7ds-list {
+  display: grid !important;
+  gap: 8px !important;
+}
+#si-7ds-overlay .si-7ds-list-item {
+  border-radius: 10px !important;
+  border: 1px solid rgba(201, 162, 80, .14) !important;
+  background: rgba(255,255,255,.02) !important;
+  padding: 10px !important;
+}
+#si-7ds-overlay .si-7ds-setting-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  padding: 10px 0 !important;
+  border-bottom: 1px solid rgba(201, 162, 80, .08) !important;
+}
+#si-7ds-overlay .si-7ds-setting-row:last-child {
+  border-bottom: 0 !important;
+}
+#si-7ds-overlay .si-7ds-setting-label {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  color: #f3df9c !important;
+  text-transform: uppercase !important;
+  letter-spacing: .5px !important;
+}
+#si-7ds-overlay .si-7ds-setting-value {
+  font-size: 12px !important;
+  color: #f8f0dd !important;
+}
 @media (max-width: 520px) {
   #si-7ds-launcher-btn {
     left: 0 !important;
@@ -243,6 +313,15 @@
     top: 80px !important;
     bottom: 92px !important;
     max-width: none !important;
+  }
+  #si-7ds-overlay .si-7ds-tabrow {
+    gap: 6px !important;
+    padding: 10px 10px 0 !important;
+  }
+  #si-7ds-overlay .si-7ds-tab {
+    min-height: 34px !important;
+    font-size: 10px !important;
+    padding: 0 4px !important;
   }
 }
         `);
@@ -284,6 +363,110 @@
         return launcherBar;
     }
 
+    function renderTabRow() {
+        return '<div class="si-7ds-tabrow">'
+            + Object.keys(TAB_LABELS).map(function (key) {
+                return '<button type="button" class="si-7ds-tab' + (activeTab === key ? ' active' : '') + '" data-tab="' + key + '">' + TAB_LABELS[key] + '</button>';
+            }).join('')
+            + '</div>';
+    }
+
+    function renderTabContent() {
+        if (activeTab === 'overview') {
+            return ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Overview</div>'
+                +   '<div class="si-7ds-text">Your 4-tab shell is now live on the clean bottom-left launcher build. This is the starting home tab for Sinners Insurance.</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Current Layout</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">4 tabs active</span>'
+                +     '<span class="si-7ds-pill">Bottom-left launcher</span>'
+                +     '<span class="si-7ds-pill">7DS theme</span>'
+                +   '</div>'
+                + '</div>';
+        }
+
+        if (activeTab === 'plans') {
+            return ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Plans</div>'
+                +   '<div class="si-7ds-list">'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Starter coverage slot ready for your first plan box.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Standard coverage slot ready for pricing, perks, and terms.</div></div>'
+                +     '<div class="si-7ds-list-item"><div class="si-7ds-text">Premium coverage slot ready for your higher tier package details.</div></div>'
+                +   '</div>'
+                + '</div>';
+        }
+
+        if (activeTab === 'claims') {
+            return ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claims</div>'
+                +   '<div class="si-7ds-text">This tab is ready for claim intake, payout logs, claim status, or member request forms.</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim Flow</div>'
+                +   '<div class="si-7ds-pillrow">'
+                +     '<span class="si-7ds-pill">Submit</span>'
+                +     '<span class="si-7ds-pill">Review</span>'
+                +     '<span class="si-7ds-pill">Approve</span>'
+                +     '<span class="si-7ds-pill">Payout</span>'
+                +   '</div>'
+                + '</div>';
+        }
+
+        return ''
+            + '<div class="si-7ds-card">'
+            +   '<div class="si-7ds-card-title">Settings</div>'
+            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Launcher</div><div class="si-7ds-setting-value">Bottom-left locked</div></div>'
+            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Theme</div><div class="si-7ds-setting-value">7 Deadly Sins crimson/gold</div></div>'
+            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Overlay</div><div class="si-7ds-setting-value">4-tab shell active</div></div>'
+            + '</div>'
+            + '<div class="si-7ds-card">'
+            +   '<div class="si-7ds-card-title">Next Build Step</div>'
+            +   '<div class="si-7ds-text">This tab is ready for toggles, admin settings, webhook settings, or API controls.</div>'
+            + '</div>';
+    }
+
+    function bindOverlayEvents() {
+        if (!overlay) return;
+
+        var closeBtn = overlay.querySelector('.si-7ds-close');
+        if (closeBtn && !closeBtn.dataset.bound) {
+            closeBtn.dataset.bound = '1';
+            closeBtn.addEventListener('click', function () { setOpen(false); });
+        }
+
+        overlay.querySelectorAll('.si-7ds-tab').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                activeTab = btn.getAttribute('data-tab') || 'overview';
+                renderOverlay();
+            });
+        });
+    }
+
+    function renderOverlay() {
+        if (!overlay) return;
+        overlay.innerHTML = ''
+            + '<div class="si-7ds-head">'
+            +   '<div class="si-7ds-titlewrap">'
+            +     '<div class="si-7ds-title">Sinners Insurance 💊</div>'
+            +     '<div class="si-7ds-sub">7 Deadly Sins Theme</div>'
+            +   '</div>'
+            +   '<button type="button" class="si-7ds-close" aria-label="Close">×</button>'
+            + '</div>'
+            + renderTabRow()
+            + '<div class="si-7ds-body">'
+            +   renderTabContent()
+            + '</div>';
+
+        bindOverlayEvents();
+    }
+
     function createOverlay() {
         if (overlay && document.body.contains(overlay)) return overlay;
 
@@ -297,34 +480,8 @@
 
         overlay = document.createElement('div');
         overlay.id = 'si-7ds-overlay';
-        overlay.innerHTML = ''
-            + '<div class="si-7ds-head">'
-            +   '<div class="si-7ds-titlewrap">'
-            +     '<div class="si-7ds-title">Sinners Insurance 💊</div>'
-            +     '<div class="si-7ds-sub">7 Deadly Sins Theme</div>'
-            +   '</div>'
-            +   '<button type="button" class="si-7ds-close" aria-label="Close">×</button>'
-            + '</div>'
-            + '<div class="si-7ds-body">'
-            +   '<div class="si-7ds-card">'
-            +     '<div class="si-7ds-card-title">Wrath Shell</div>'
-            +     '<div class="si-7ds-text">This is the clean starter shell only. The launcher now sits in the true bottom-left corner and the overlay keeps the same dark crimson and gold 7 Deadly Sins look.</div>'
-            +   '</div>'
-            +   '<div class="si-7ds-card">'
-            +     '<div class="si-7ds-card-title">Ready To Build</div>'
-            +     '<div class="si-7ds-pillrow">'
-            +       '<span class="si-7ds-pill">No tabs yet</span>'
-            +       '<span class="si-7ds-pill">No floating icon</span>'
-            +       '<span class="si-7ds-pill">Bottom-left launcher</span>'
-            +     '</div>'
-            +   '</div>'
-            + '</div>';
-
+        renderOverlay();
         document.body.appendChild(overlay);
-
-        var closeBtn = overlay.querySelector('.si-7ds-close');
-        if (closeBtn) closeBtn.addEventListener('click', function () { setOpen(false); });
-
         return overlay;
     }
 
