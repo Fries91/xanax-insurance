@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS Minimal Header
 // @namespace    fries91-xanax-insurance
-// @version      2.1.0
-// @description  Minimal 7 Deadly Sins themed Torn top-bar button with one centered button and themed overlay
+// @version      2.1.1
+// @description  Minimal 7 Deadly Sins themed Torn bottom-left button with themed overlay
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @run-at       document-idle
@@ -22,14 +22,14 @@
         GM_addStyle(`
 #si-7ds-launcher {
   position: fixed !important;
-  left: 0 !important;
-  right: 0 !important;
-  top: env(safe-area-inset-top, 0px) !important;
-  height: 78px !important;
+  left: env(safe-area-inset-left, 0px) !important;
+  bottom: env(safe-area-inset-bottom, 0px) !important;
+  width: 170px !important;
+  height: 34px !important;
   z-index: 2147483647 !important;
   display: flex !important;
-  justify-content: center !important;
-  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  align-items: flex-end !important;
   box-sizing: border-box !important;
   pointer-events: none !important;
 }
@@ -38,9 +38,9 @@
   appearance: none !important;
   -webkit-appearance: none !important;
   position: absolute !important;
-  top: 40px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  transform: none !important;
   width: 164px !important;
   height: 28px !important;
   padding: 0 10px !important;
@@ -84,7 +84,7 @@
   pointer-events: none !important;
 }
 #si-7ds-launcher-btn:active {
-  transform: translateX(-50%) translateY(1px) !important;
+  transform: translateY(1px) !important;
 }
 #si-7ds-launcher-btn .si-7ds-icon {
   font-size: 11px !important;
@@ -230,7 +230,8 @@
 }
 @media (max-width: 520px) {
   #si-7ds-launcher-btn {
-    top: 41px !important;
+    left: 0 !important;
+    bottom: 0 !important;
     width: 166px !important;
     height: 28px !important;
     font-size: 11px !important;
@@ -307,14 +308,14 @@
             + '<div class="si-7ds-body">'
             +   '<div class="si-7ds-card">'
             +     '<div class="si-7ds-card-title">Wrath Shell</div>'
-            +     '<div class="si-7ds-text">This is the clean starter shell only. The launcher now sits in the top bar red-marked area and the overlay keeps the same dark crimson and gold 7 Deadly Sins look.</div>'
+            +     '<div class="si-7ds-text">This is the clean starter shell only. The launcher now sits in the true bottom-left corner and the overlay keeps the same dark crimson and gold 7 Deadly Sins look.</div>'
             +   '</div>'
             +   '<div class="si-7ds-card">'
             +     '<div class="si-7ds-card-title">Ready To Build</div>'
             +     '<div class="si-7ds-pillrow">'
             +       '<span class="si-7ds-pill">No tabs yet</span>'
             +       '<span class="si-7ds-pill">No floating icon</span>'
-            +       '<span class="si-7ds-pill">Top-bar launcher</span>'
+            +       '<span class="si-7ds-pill">Bottom-left launcher</span>'
             +     '</div>'
             +   '</div>'
             + '</div>';
