@@ -46,6 +46,7 @@ class ClaimsStore(BaseStore):
 
                     armedAt TEXT NOT NULL DEFAULT '',
                     armedPlan TEXT NOT NULL DEFAULT '',
+                    armedStage TEXT NOT NULL DEFAULT '',
                     armedEnergy TEXT NOT NULL DEFAULT '',
                     armedBoosterCd TEXT NOT NULL DEFAULT '',
                     expiresAt TEXT NOT NULL DEFAULT '',
@@ -53,12 +54,28 @@ class ClaimsStore(BaseStore):
                     ruleCheck TEXT NOT NULL DEFAULT '',
                     detectStatus TEXT NOT NULL DEFAULT '',
 
+                    requiredPaymentItem TEXT NOT NULL DEFAULT '',
+                    requiredPaymentQty TEXT NOT NULL DEFAULT '',
+                    memberPaymentVerified INTEGER NOT NULL DEFAULT 0,
+                    memberPaymentVerifiedAt TEXT NOT NULL DEFAULT '',
+                    memberPaymentProof TEXT NOT NULL DEFAULT '',
+
+                    adminReceiptVerified INTEGER NOT NULL DEFAULT 0,
+                    adminReceiptVerifiedAt TEXT NOT NULL DEFAULT '',
+                    adminReceiptProof TEXT NOT NULL DEFAULT '',
+
+                    adminPayoutVerified INTEGER NOT NULL DEFAULT 0,
+                    adminPayoutVerifiedAt TEXT NOT NULL DEFAULT '',
+                    adminPayoutProof TEXT NOT NULL DEFAULT '',
+
                     isRead INTEGER NOT NULL DEFAULT 0,
                     isNotified INTEGER NOT NULL DEFAULT 0,
                     notifiedAt TEXT NOT NULL DEFAULT '',
 
                     reviewedBy TEXT NOT NULL DEFAULT '',
-                    paidAt TEXT NOT NULL DEFAULT ''
+                    paidAt TEXT NOT NULL DEFAULT '',
+                    completedAt TEXT NOT NULL DEFAULT '',
+                    locked INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -69,31 +86,51 @@ class ClaimsStore(BaseStore):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_updated_at ON claims(updatedAt)")
             conn.commit()
 
-            self._ensure_column(conn, "claims", "member", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "memberId", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "plan", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "status", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "note", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "loss", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "proof", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "stack", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "payout", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "decision", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "updatedAt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "createdAt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "armedAt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "armedPlan", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "armedEnergy", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "armedBoosterCd", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "expiresAt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "odDetectedAt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "ruleCheck", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "detectStatus", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "isRead", "INTEGER NOT NULL DEFAULT 0")
-            self._ensure_column(conn, "claims", "isNotified", "INTEGER NOT NULL DEFAULT 0")
-            self._ensure_column(conn, "claims", "notifiedAt", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "reviewedBy", "TEXT NOT NULL DEFAULT ''")
-            self._ensure_column(conn, "claims", "paidAt", "TEXT NOT NULL DEFAULT ''")
+            needed = {
+                "member": "TEXT NOT NULL DEFAULT ''",
+                "memberId": "TEXT NOT NULL DEFAULT ''",
+                "plan": "TEXT NOT NULL DEFAULT ''",
+                "status": "TEXT NOT NULL DEFAULT ''",
+                "note": "TEXT NOT NULL DEFAULT ''",
+                "loss": "TEXT NOT NULL DEFAULT ''",
+                "proof": "TEXT NOT NULL DEFAULT ''",
+                "stack": "TEXT NOT NULL DEFAULT ''",
+                "payout": "TEXT NOT NULL DEFAULT ''",
+                "decision": "TEXT NOT NULL DEFAULT ''",
+                "updatedAt": "TEXT NOT NULL DEFAULT ''",
+                "createdAt": "TEXT NOT NULL DEFAULT ''",
+                "armedAt": "TEXT NOT NULL DEFAULT ''",
+                "armedPlan": "TEXT NOT NULL DEFAULT ''",
+                "armedStage": "TEXT NOT NULL DEFAULT ''",
+                "armedEnergy": "TEXT NOT NULL DEFAULT ''",
+                "armedBoosterCd": "TEXT NOT NULL DEFAULT ''",
+                "expiresAt": "TEXT NOT NULL DEFAULT ''",
+                "odDetectedAt": "TEXT NOT NULL DEFAULT ''",
+                "ruleCheck": "TEXT NOT NULL DEFAULT ''",
+                "detectStatus": "TEXT NOT NULL DEFAULT ''",
+                "requiredPaymentItem": "TEXT NOT NULL DEFAULT ''",
+                "requiredPaymentQty": "TEXT NOT NULL DEFAULT ''",
+                "memberPaymentVerified": "INTEGER NOT NULL DEFAULT 0",
+                "memberPaymentVerifiedAt": "TEXT NOT NULL DEFAULT ''",
+                "memberPaymentProof": "TEXT NOT NULL DEFAULT ''",
+                "adminReceiptVerified": "INTEGER NOT NULL DEFAULT 0",
+                "adminReceiptVerifiedAt": "TEXT NOT NULL DEFAULT ''",
+                "adminReceiptProof": "TEXT NOT NULL DEFAULT ''",
+                "adminPayoutVerified": "INTEGER NOT NULL DEFAULT 0",
+                "adminPayoutVerifiedAt": "TEXT NOT NULL DEFAULT ''",
+                "adminPayoutProof": "TEXT NOT NULL DEFAULT ''",
+                "isRead": "INTEGER NOT NULL DEFAULT 0",
+                "isNotified": "INTEGER NOT NULL DEFAULT 0",
+                "notifiedAt": "TEXT NOT NULL DEFAULT ''",
+                "reviewedBy": "TEXT NOT NULL DEFAULT ''",
+                "paidAt": "TEXT NOT NULL DEFAULT ''",
+                "completedAt": "TEXT NOT NULL DEFAULT ''",
+                "locked": "INTEGER NOT NULL DEFAULT 0",
+            }
+
+            for column, definition in needed.items():
+                self._ensure_column(conn, "claims", column, definition)
+
             conn.commit()
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -120,6 +157,7 @@ class ClaimsStore(BaseStore):
 
             "armedAt": str(claim.get("armedAt", "")),
             "armedPlan": str(claim.get("armedPlan", "")),
+            "armedStage": str(claim.get("armedStage", "")),
             "armedEnergy": str(claim.get("armedEnergy", "")),
             "armedBoosterCd": str(claim.get("armedBoosterCd", "")),
             "expiresAt": str(claim.get("expiresAt", "")),
@@ -127,12 +165,28 @@ class ClaimsStore(BaseStore):
             "ruleCheck": str(claim.get("ruleCheck", "")),
             "detectStatus": str(claim.get("detectStatus", "")),
 
-            "isRead": 1 if str(claim.get("isRead", 0)).lower() in {"1", "true", "yes"} else int(claim.get("isRead", 0) or 0),
-            "isNotified": 1 if str(claim.get("isNotified", 0)).lower() in {"1", "true", "yes"} else int(claim.get("isNotified", 0) or 0),
+            "requiredPaymentItem": str(claim.get("requiredPaymentItem", "")),
+            "requiredPaymentQty": str(claim.get("requiredPaymentQty", "")),
+            "memberPaymentVerified": int(claim.get("memberPaymentVerified", 0) or 0),
+            "memberPaymentVerifiedAt": str(claim.get("memberPaymentVerifiedAt", "")),
+            "memberPaymentProof": str(claim.get("memberPaymentProof", "")),
+
+            "adminReceiptVerified": int(claim.get("adminReceiptVerified", 0) or 0),
+            "adminReceiptVerifiedAt": str(claim.get("adminReceiptVerifiedAt", "")),
+            "adminReceiptProof": str(claim.get("adminReceiptProof", "")),
+
+            "adminPayoutVerified": int(claim.get("adminPayoutVerified", 0) or 0),
+            "adminPayoutVerifiedAt": str(claim.get("adminPayoutVerifiedAt", "")),
+            "adminPayoutProof": str(claim.get("adminPayoutProof", "")),
+
+            "isRead": int(claim.get("isRead", 0) or 0),
+            "isNotified": int(claim.get("isNotified", 0) or 0),
             "notifiedAt": str(claim.get("notifiedAt", "")),
 
             "reviewedBy": str(claim.get("reviewedBy", "")),
             "paidAt": str(claim.get("paidAt", "")),
+            "completedAt": str(claim.get("completedAt", "")),
+            "locked": int(claim.get("locked", 0) or 0),
         }
 
         with self._connect() as conn:
@@ -140,15 +194,21 @@ class ClaimsStore(BaseStore):
                 """
                 INSERT INTO claims (
                     id, member, memberId, plan, status, note, loss, proof, stack, payout,
-                    decision, updatedAt, createdAt, armedAt, armedPlan, armedEnergy,
+                    decision, updatedAt, createdAt, armedAt, armedPlan, armedStage, armedEnergy,
                     armedBoosterCd, expiresAt, odDetectedAt, ruleCheck, detectStatus,
-                    isRead, isNotified, notifiedAt, reviewedBy, paidAt
+                    requiredPaymentItem, requiredPaymentQty, memberPaymentVerified, memberPaymentVerifiedAt, memberPaymentProof,
+                    adminReceiptVerified, adminReceiptVerifiedAt, adminReceiptProof,
+                    adminPayoutVerified, adminPayoutVerifiedAt, adminPayoutProof,
+                    isRead, isNotified, notifiedAt, reviewedBy, paidAt, completedAt, locked
                 )
                 VALUES (
                     :id, :member, :memberId, :plan, :status, :note, :loss, :proof, :stack, :payout,
-                    :decision, :updatedAt, :createdAt, :armedAt, :armedPlan, :armedEnergy,
+                    :decision, :updatedAt, :createdAt, :armedAt, :armedPlan, :armedStage, :armedEnergy,
                     :armedBoosterCd, :expiresAt, :odDetectedAt, :ruleCheck, :detectStatus,
-                    :isRead, :isNotified, :notifiedAt, :reviewedBy, :paidAt
+                    :requiredPaymentItem, :requiredPaymentQty, :memberPaymentVerified, :memberPaymentVerifiedAt, :memberPaymentProof,
+                    :adminReceiptVerified, :adminReceiptVerifiedAt, :adminReceiptProof,
+                    :adminPayoutVerified, :adminPayoutVerifiedAt, :adminPayoutProof,
+                    :isRead, :isNotified, :notifiedAt, :reviewedBy, :paidAt, :completedAt, :locked
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     member=excluded.member,
@@ -165,17 +225,31 @@ class ClaimsStore(BaseStore):
                     createdAt=COALESCE(NULLIF(claims.createdAt, ''), excluded.createdAt),
                     armedAt=excluded.armedAt,
                     armedPlan=excluded.armedPlan,
+                    armedStage=excluded.armedStage,
                     armedEnergy=excluded.armedEnergy,
                     armedBoosterCd=excluded.armedBoosterCd,
                     expiresAt=excluded.expiresAt,
                     odDetectedAt=excluded.odDetectedAt,
                     ruleCheck=excluded.ruleCheck,
                     detectStatus=excluded.detectStatus,
+                    requiredPaymentItem=excluded.requiredPaymentItem,
+                    requiredPaymentQty=excluded.requiredPaymentQty,
+                    memberPaymentVerified=excluded.memberPaymentVerified,
+                    memberPaymentVerifiedAt=excluded.memberPaymentVerifiedAt,
+                    memberPaymentProof=excluded.memberPaymentProof,
+                    adminReceiptVerified=excluded.adminReceiptVerified,
+                    adminReceiptVerifiedAt=excluded.adminReceiptVerifiedAt,
+                    adminReceiptProof=excluded.adminReceiptProof,
+                    adminPayoutVerified=excluded.adminPayoutVerified,
+                    adminPayoutVerifiedAt=excluded.adminPayoutVerifiedAt,
+                    adminPayoutProof=excluded.adminPayoutProof,
                     isRead=excluded.isRead,
                     isNotified=excluded.isNotified,
                     notifiedAt=excluded.notifiedAt,
                     reviewedBy=excluded.reviewedBy,
-                    paidAt=excluded.paidAt
+                    paidAt=excluded.paidAt,
+                    completedAt=excluded.completedAt,
+                    locked=excluded.locked
                 """,
                 payload,
             )
@@ -183,10 +257,7 @@ class ClaimsStore(BaseStore):
 
     def get_claim(self, claim_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM claims WHERE id = ?",
-                (claim_id,),
-            ).fetchone()
+            row = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
             return dict(row) if row else None
 
     def list_claims(
@@ -281,11 +352,11 @@ class ClaimHistoryStore(BaseStore):
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT claim_id, text, createdAt
+                SELECT claim_id, text, text, createdAt
                 FROM claim_history
                 ORDER BY id DESC
                 LIMIT ?
                 """,
                 (limit,),
             ).fetchall()
-            return [dict(r) for r in rows]
+            return [{"claim_id": r["claim_id"], "text": r["text"], "createdAt": r["createdAt"]} for r in rows]
