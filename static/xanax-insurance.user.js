@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.8.3
+// @version      2.8.5
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -20,6 +20,7 @@
     var remountTimer = null;
     var activeTab = 'overview';
     var selectedPlan = (typeof GM_getValue === 'function' ? GM_getValue('si_selected_plan', 'None') : 'None');
+    var activeTermsPlan = '';
     var sessionRole = (typeof GM_getValue === 'function' ? GM_getValue('si_session_role', 'guest') : 'guest');
     var sessionName = (typeof GM_getValue === 'function' ? GM_getValue('si_session_name', 'Guest') : 'Guest');
     var claimStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_status', 'Not submitted') : 'Not submitted');
@@ -1337,30 +1338,34 @@
                 + '<div class="si-7ds-plan-box">'
                 +   '<div class="si-7ds-plan-top">'
                 +     '<div><div class="si-7ds-plan-name">Pride Sin</div><div class="si-7ds-plan-tier">Basic coverage</div></div>'
-                +     '<span class="si-7ds-pill">1 Xanax</span>'
+                +     '<span class="si-7ds-pill">Pride plan</span>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Rule</div><div class="si-7ds-plan-stat-value">Single / 1st</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Small payout</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">6 Xanax</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">2 Xanax</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">20 mins</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">Any energy start</div></div>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Pride Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Pride Sin">Terms</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Pride Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
 
                 + '<div class="si-7ds-plan-box">'
                 +   '<div class="si-7ds-plan-top">'
                 +     '<div><div class="si-7ds-plan-name">Wrath Sin</div><div class="si-7ds-plan-tier">Standard coverage</div></div>'
-                +     '<span class="si-7ds-pill">1st to 4th</span>'
+                +     '<span class="si-7ds-pill">Stage plan</span>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Rule</div><div class="si-7ds-plan-stat-value">1st-4th stack</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Mid payout</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">2 per stage</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">1 hour / stage</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">5 / 10 / 15 / 20</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">OD log</div><div class="si-7ds-plan-stat-value">250 / 500 / 750 / 1000</div></div>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Wrath Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Wrath Sin">Terms</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Wrath Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
 
@@ -1375,7 +1380,7 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="terms-plan" data-plan="Envy Sin">Terms</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Envy Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
 
@@ -1621,6 +1626,56 @@
             +   '<div class="si-7ds-card-title">Builder Notes</div>'
             +   '<div class="si-7ds-text">Login state, selected plan, and claims save between page loads. This upgrade adds backend-ready shared claim sync.</div>'
             + '</div>';
+    }
+
+    function closeTermsModal() {
+        activeTermsPlan = '';
+        var existing = document.getElementById('si-terms-backdrop');
+        if (existing) existing.remove();
+    }
+
+    function openTermsModal(plan) {
+        activeTermsPlan = plan || '';
+        closeTermsModal();
+
+        var backdrop = document.createElement('div');
+        backdrop.id = 'si-terms-backdrop';
+
+        var bodyText = 'Terms not set yet.';
+        if (plan === 'Pride Sin') {
+            bodyText = '(Can start with any amount of energy!)';
+        }
+        if (plan === 'Wrath Sin') {
+            bodyText = '(Must start with 0 energy so OD log shows loss 250,500,750,1000. Can combine with Envy plan)';
+        }
+
+        backdrop.innerHTML = ''
+            + '<div id="si-terms-modal">'
+            +   '<div id="si-terms-head">'
+            +     '<div id="si-terms-title">' + esc(plan || 'Terms') + ' Terms</div>'
+            +     '<button type="button" id="si-terms-close">×</button>'
+            +   '</div>'
+            +   '<div id="si-terms-body">'
+            +     '<div id="si-terms-card">'
+            +       '<div id="si-terms-text">' + esc(bodyText) + '</div>'
+            +     '</div>'
+            +   '</div>'
+            + '</div>';
+
+        document.body.appendChild(backdrop);
+
+        var closeBtn = backdrop.querySelector('#si-terms-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                closeTermsModal();
+            });
+        }
+
+        backdrop.addEventListener('click', function (e) {
+            if (e.target === backdrop) {
+                closeTermsModal();
+            }
+        });
     }
 
     function bindOverlayEvents() {
