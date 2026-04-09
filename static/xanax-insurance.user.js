@@ -1,3 +1,5 @@
+Sinner's Insurance Copy Paste
+Launcher moved up from the bottom so it stays visible on iPhone/Torn.
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
@@ -1329,7 +1331,7 @@
 #si-7ds-launcher {
   position: fixed !important;
   left: env(safe-area-inset-left, 0px) !important;
-  bottom: env(safe-area-inset-bottom, 0px) !important;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
   width: 170px !important;
   height: 34px !important;
   z-index: 2147483647 !important;
