@@ -21,10 +21,6 @@ TORN_API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
 
 
-# ============================================================
-# HELPERS
-# ============================================================
-
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -187,45 +183,63 @@ def clean_claim_payload(claim: dict[str, Any], existing: dict[str, Any] | None =
     existing = existing or {}
     created_at = normalize_text(existing.get("createdAt")) or now_iso()
 
+    def text_field(name: str, default: str = "") -> str:
+        return normalize_text(claim.get(name)) or normalize_text(existing.get(name)) or default
+
+    def bool_field(name: str, default: int = 0) -> int:
+        if name in claim:
+            return normalize_bool(claim.get(name))
+        return normalize_bool(existing.get(name, default))
+
     return {
-        "id": normalize_text(claim.get("id")),
-        "member": normalize_text(claim.get("member")) or normalize_text(existing.get("member")) or "Guest",
-        "memberId": normalize_text(claim.get("memberId")) or normalize_text(existing.get("memberId")),
-        "plan": normalize_text(claim.get("plan")) or normalize_text(existing.get("plan")) or "None",
-        "status": normalize_text(claim.get("status")) or normalize_text(existing.get("status")) or "Not submitted",
-        "note": normalize_text(claim.get("note")) or normalize_text(existing.get("note")),
-        "loss": normalize_text(claim.get("loss")) or normalize_text(existing.get("loss")),
-        "proof": normalize_text(claim.get("proof")) or normalize_text(existing.get("proof")),
-        "stack": normalize_text(claim.get("stack")) or normalize_text(existing.get("stack")),
-        "payout": normalize_text(claim.get("payout")) or normalize_text(existing.get("payout")),
-        "decision": normalize_text(claim.get("decision")) or normalize_text(existing.get("decision")),
-        "updatedAt": normalize_text(claim.get("updatedAt")) or now_iso(),
+        "id": text_field("id"),
+        "member": text_field("member", "Guest"),
+        "memberId": text_field("memberId"),
+        "plan": text_field("plan", "None"),
+        "status": text_field("status", "Not submitted"),
+        "note": text_field("note"),
+        "loss": text_field("loss"),
+        "proof": text_field("proof"),
+        "stack": text_field("stack"),
+        "payout": text_field("payout"),
+        "decision": text_field("decision"),
+        "updatedAt": text_field("updatedAt", now_iso()),
         "createdAt": created_at,
 
-        # Armed snapshot / timing
-        "armedAt": normalize_text(claim.get("armedAt")) or normalize_text(existing.get("armedAt")),
-        "armedPlan": normalize_text(claim.get("armedPlan")) or normalize_text(existing.get("armedPlan")),
-        "armedEnergy": normalize_text(claim.get("armedEnergy")) or normalize_text(existing.get("armedEnergy")),
-        "armedBoosterCd": normalize_text(claim.get("armedBoosterCd")) or normalize_text(existing.get("armedBoosterCd")),
-        "expiresAt": normalize_text(claim.get("expiresAt")) or normalize_text(existing.get("expiresAt")),
-        "odDetectedAt": normalize_text(claim.get("odDetectedAt")) or normalize_text(existing.get("odDetectedAt")),
-        "ruleCheck": normalize_text(claim.get("ruleCheck")) or normalize_text(existing.get("ruleCheck")),
-        "detectStatus": normalize_text(claim.get("detectStatus")) or normalize_text(existing.get("detectStatus")),
+        "armedAt": text_field("armedAt"),
+        "armedPlan": text_field("armedPlan"),
+        "armedStage": text_field("armedStage"),
+        "armedEnergy": text_field("armedEnergy"),
+        "armedBoosterCd": text_field("armedBoosterCd"),
+        "expiresAt": text_field("expiresAt"),
+        "odDetectedAt": text_field("odDetectedAt"),
+        "ruleCheck": text_field("ruleCheck"),
+        "detectStatus": text_field("detectStatus"),
 
-        # Notification/admin flow
-        "isRead": normalize_bool(claim.get("isRead") if "isRead" in claim else existing.get("isRead", 0)),
-        "isNotified": normalize_bool(claim.get("isNotified") if "isNotified" in claim else existing.get("isNotified", 0)),
-        "notifiedAt": normalize_text(claim.get("notifiedAt")) or normalize_text(existing.get("notifiedAt")),
+        "requiredPaymentItem": text_field("requiredPaymentItem"),
+        "requiredPaymentQty": text_field("requiredPaymentQty"),
+        "memberPaymentVerified": bool_field("memberPaymentVerified"),
+        "memberPaymentVerifiedAt": text_field("memberPaymentVerifiedAt"),
+        "memberPaymentProof": text_field("memberPaymentProof"),
 
-        # Audit
-        "reviewedBy": normalize_text(claim.get("reviewedBy")) or normalize_text(existing.get("reviewedBy")),
-        "paidAt": normalize_text(claim.get("paidAt")) or normalize_text(existing.get("paidAt")),
+        "adminReceiptVerified": bool_field("adminReceiptVerified"),
+        "adminReceiptVerifiedAt": text_field("adminReceiptVerifiedAt"),
+        "adminReceiptProof": text_field("adminReceiptProof"),
+
+        "adminPayoutVerified": bool_field("adminPayoutVerified"),
+        "adminPayoutVerifiedAt": text_field("adminPayoutVerifiedAt"),
+        "adminPayoutProof": text_field("adminPayoutProof"),
+
+        "isRead": bool_field("isRead"),
+        "isNotified": bool_field("isNotified"),
+        "notifiedAt": text_field("notifiedAt"),
+
+        "reviewedBy": text_field("reviewedBy"),
+        "paidAt": text_field("paidAt"),
+        "completedAt": text_field("completedAt"),
+        "locked": bool_field("locked"),
     }
 
-
-# ============================================================
-# ROUTES
-# ============================================================
 
 @app.route("/api/health", methods=["GET", "OPTIONS"])
 def health():
@@ -307,7 +321,6 @@ def claim_history():
     if claim_id:
         return jsonify({"ok": True, "history": history.list_history(claim_id)})
 
-    # If no claim_id is provided, return recent global history
     limit = int(payload.get("limit", 100) or 100)
     return jsonify({"ok": True, "history": history.list_recent(limit=limit)})
 
@@ -332,6 +345,13 @@ def push_claim():
     existing = claims.get_claim(claim_id)
     clean = clean_claim_payload(claim, existing)
 
+    if existing and normalize_bool(existing.get("locked")) and action not in {
+        "admin_mark_read",
+        "admin_mark_unread",
+        "admin_mark_notified",
+    }:
+        return json_error("claim is locked", 403)
+
     if action == "member_submit":
         user, err = verify_faction_member(auth)
         if not user:
@@ -348,6 +368,8 @@ def push_claim():
         clean["notifiedAt"] = ""
         clean["reviewedBy"] = normalize_text(existing.get("reviewedBy")) if existing else ""
         clean["paidAt"] = normalize_text(existing.get("paidAt")) if existing else ""
+        clean["completedAt"] = normalize_text(existing.get("completedAt")) if existing else ""
+        clean["locked"] = normalize_bool(existing.get("locked")) if existing else 0
 
         claims.upsert_claim(clean)
         history.add_entry(
@@ -391,6 +413,22 @@ def push_claim():
             msg += f' Payout: {clean["payout"]}.'
         history.add_entry(claim_id, msg)
 
+        return jsonify({"ok": True, "claim": claims.get_claim(claim_id)})
+
+    if action == "admin_complete":
+        admin_key = normalize_text(auth.get("admin_api_key") or auth.get("api_key"))
+        user, err = verify_admin_by_key(admin_key)
+        if not user:
+            return json_error(err or "admin auth failed", 403)
+
+        clean["status"] = "Paid"
+        clean["reviewedBy"] = user["name"]
+        clean["paidAt"] = clean["paidAt"] or now_iso()
+        clean["completedAt"] = now_iso()
+        clean["locked"] = 1
+
+        claims.upsert_claim(clean)
+        history.add_entry(claim_id, f'Admin {user["name"]} completed and locked claim as Paid.')
         return jsonify({"ok": True, "claim": claims.get_claim(claim_id)})
 
     if action == "admin_mark_read":
