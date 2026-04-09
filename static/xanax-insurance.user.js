@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.8.7
+// @version      2.8.8
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -1332,8 +1332,8 @@
         GM_addStyle(`
 #si-7ds-launcher {
   position: fixed !important;
-  right: calc(env(safe-area-inset-right, 0px) + 10px) !important;
-  top: calc(env(safe-area-inset-top, 0px) + 116px) !important;
+  left: env(safe-area-inset-left, 0px) !important;
+  bottom: env(safe-area-inset-bottom, 0px) !important;
   width: 170px !important;
   height: 34px !important;
   z-index: 2147483647 !important;
