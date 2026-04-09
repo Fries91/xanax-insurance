@@ -39,7 +39,7 @@
     var claimFilterMember = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_member', '') : '');
     var claimSortMode = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_sort_mode', 'newest') : 'newest');
     var apiBase = (typeof GM_getValue === 'function' ? GM_getValue('si_api_base', 'https://xanax-insurance.onrender.com') : 'https://xanax-insurance.onrender.com');
-    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '6282') : '');
+    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '6282') : '6282');
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
     var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
     var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
@@ -53,8 +53,13 @@
     var authUser = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_user', '') : '');
     var authPass = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_pass', '') : '');
     var memberApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_member_api_key', '') : '');
-    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '49384') : '');
+    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '49384') : '49384');
     var authMode = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_mode', 'local') : 'local');
+    var planActivationAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_at', '') : '');
+    var planActivationPlan = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_plan', '') : '');
+    var planActivationEnergy = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_energy', '') : '');
+    var planActivationBoosterCd = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_booster_cd', '') : '');
+    var planActivationExpiresAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_expires_at', '') : '');
 
     var TAB_LABELS = {
         overview: 'Overview',
@@ -108,6 +113,11 @@
             GM_setValue('si_member_api_key', memberApiKey || '');
             GM_setValue('si_faction_id_lock', factionIdLock || '');
             GM_setValue('si_auth_mode', authMode || 'local');
+            GM_setValue('si_plan_activation_at', planActivationAt || '');
+            GM_setValue('si_plan_activation_plan', planActivationPlan || '');
+            GM_setValue('si_plan_activation_energy', planActivationEnergy || '');
+            GM_setValue('si_plan_activation_booster_cd', planActivationBoosterCd || '');
+            GM_setValue('si_plan_activation_expires_at', planActivationExpiresAt || '');
         }
     }
 
@@ -217,6 +227,104 @@
     function getTornIdentity(apiKey) {
         var url = 'https://api.torn.com/user/?selections=profile&key=' + encodeURIComponent(apiKey || '');
         return tornApiRequest(url);
+    }
+
+    function getTornBarsAndCooldowns(apiKey) {
+        return getTornUserSelection(apiKey, 'basic,bars,cooldowns');
+    }
+
+    function getRequiredUserSelections() {
+        return 'profile,basic,bars,cooldowns,events,log';
+    }
+
+    function getCustomKeyUrl() {
+        return 'https://www.torn.com/preferences.php#tab=api?step=addNewKey&title='
+            + encodeURIComponent("Sinner's Insurance")
+            + '&user=' + encodeURIComponent(getRequiredUserSelections());
+    }
+
+    function getPlanWindowMinutes(plan) {
+        if (plan === 'Pride Sin') return 60;
+        if (plan === 'Wrath Sin') return 2880;
+        if (plan === 'Envy Sin') return 2880;
+        return 60;
+    }
+
+    function getPlanWindowLabel(plan) {
+        if (plan === 'Pride Sin') return '1 hour';
+        if (plan === 'Wrath Sin') return '48 hours';
+        if (plan === 'Envy Sin') return '48 hours';
+        return '1 hour';
+    }
+
+    function parseIsoOrLocalTimestamp(raw) {
+        if (!raw) return 0;
+        if (typeof raw === 'number') return raw;
+        var asNum = String(raw || '').trim();
+        if (/^\d+$/.test(asNum)) {
+            var n = parseInt(asNum, 10);
+            return n > 2000000000000 ? n : (n > 2000000000 ? n * 1000 : n);
+        }
+        var parsed = Date.parse(String(raw || ''));
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    function formatCooldownSeconds(totalSeconds) {
+        var secs = Math.max(0, parseInt(totalSeconds || 0, 10) || 0);
+        if (!secs) return 'Ready';
+        var hours = Math.floor(secs / 3600);
+        var minutes = Math.floor((secs % 3600) / 60);
+        var seconds = secs % 60;
+        var parts = [];
+        if (hours) parts.push(String(hours) + 'h');
+        if (minutes) parts.push(String(minutes) + 'm');
+        if (seconds || !parts.length) parts.push(String(seconds) + 's');
+        return parts.join(' ');
+    }
+
+    function armPlanSnapshot(plan) {
+        var now = new Date();
+        planActivationPlan = plan || selectedPlan || 'None';
+        planActivationAt = now.toLocaleString();
+        planActivationEnergy = '';
+        planActivationBoosterCd = '';
+        planActivationExpiresAt = new Date(now.getTime() + (getPlanWindowMinutes(planActivationPlan) * 60 * 1000)).toLocaleString();
+        autoDetectStatus = 'Arming ' + (planActivationPlan || 'plan') + '...';
+        saveSession();
+        renderOverlay();
+
+        if (!memberApiKey) {
+            autoDetectStatus = 'Plan armed - API key needed for live snapshot';
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+
+        return getTornBarsAndCooldowns(memberApiKey).then(function (data) {
+            if (data && data.error) {
+                autoDetectStatus = 'Plan armed - snapshot partial';
+                saveSession();
+                renderOverlay();
+                return data;
+            }
+            var bars = data && data.bars ? data.bars : {};
+            var cooldowns = data && data.cooldowns ? data.cooldowns : {};
+            var energy = bars && bars.energy ? bars.energy : {};
+            var energyCurrent = energy.current !== undefined ? energy.current : (energy.amount !== undefined ? energy.amount : '');
+            var energyMax = energy.maximum !== undefined ? energy.maximum : (energy.max !== undefined ? energy.max : '');
+            planActivationEnergy = energyCurrent !== '' ? String(energyCurrent) + (energyMax !== '' ? '/' + String(energyMax) : '') : '';
+            var boosterSecs = cooldowns && cooldowns.booster !== undefined ? cooldowns.booster : '';
+            planActivationBoosterCd = boosterSecs !== '' ? formatCooldownSeconds(boosterSecs) : '';
+            autoDetectStatus = 'Plan armed - waiting for OD in ' + getPlanWindowLabel(planActivationPlan);
+            saveSession();
+            renderOverlay();
+            return data;
+        }).catch(function () {
+            autoDetectStatus = 'Plan armed - snapshot partial';
+            saveSession();
+            renderOverlay();
+            return null;
+        });
     }
 
 
@@ -364,13 +472,41 @@
             claimStatus = 'Detected - plan needed';
             claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
             claimProof = buildAutoProofNote(entry);
-            claimNote = 'Auto-detected Xanax overdose. Select Pride or Wrath and sync the claim.';
+            claimNote = 'Auto-detected Xanax overdose. Select Pride or Wrath and arm the plan first.';
             claimStack = '';
             addClaimHistoryEntry((sessionName || 'Member') + ' had a Xanax overdose auto-detected but no Xanax plan was selected.');
             autoDetectStatus = 'OD found - select plan';
             saveSession();
             renderOverlay();
-            window.alert('Xanax overdose detected. Select Pride or Wrath, then sync your claim.');
+            window.alert('Xanax overdose detected. Select Pride or Wrath first.');
+            return Promise.resolve(null);
+        }
+
+        if (!planActivationAt || !planActivationPlan || planActivationPlan !== selectedPlan) {
+            autoDetectStatus = 'OD found - plan was not armed';
+            claimStatus = 'Detected - plan not armed';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose, but the selected plan was not armed before the OD.';
+            claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+
+        var armedAtMs = parseIsoOrLocalTimestamp(planActivationAt);
+        var odAtMs = (entry.timestamp || 0) * 1000;
+        var windowMs = getPlanWindowMinutes(selectedPlan) * 60 * 1000;
+        if (!armedAtMs || !windowMs || odAtMs < armedAtMs || odAtMs > (armedAtMs + windowMs)) {
+            autoDetectStatus = 'OD found - outside ' + getPlanWindowLabel(selectedPlan) + ' window';
+            claimStatus = 'Detected - outside window';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose was outside the armed ' + getPlanWindowLabel(selectedPlan) + ' window.';
+            claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+            addClaimHistoryEntry((sessionName || 'Member') + ' had a Xanax overdose detected outside the ' + getPlanWindowLabel(selectedPlan) + ' window for ' + selectedPlan + '.');
+            saveSession();
+            renderOverlay();
             return Promise.resolve(null);
         }
 
@@ -379,22 +515,22 @@
         claimStatus = 'Pending review';
         claimStack = getAutoStackFromOd(selectedPlan, entry.text);
         claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
-        claimProof = buildAutoProofNote(entry);
-        claimNote = 'Auto-detected via Torn API: ' + String(entry.text || '').replace(/\s+/g, ' ').slice(0, 240);
-        addClaimHistoryEntry((sessionName || 'Member') + ' had a Xanax overdose auto-detected for ' + selectedPlan + ' and claim ' + claimId + ' was created automatically.');
+        claimProof = buildAutoProofNote(entry) + ' | Armed ' + planActivationAt + ' | Energy ' + (planActivationEnergy || 'unknown') + ' | Booster CD ' + (planActivationBoosterCd || 'unknown');
+        claimNote = 'Auto-detected via Torn API within ' + getPlanWindowLabel(selectedPlan) + ': ' + String(entry.text || '').replace(/\s+/g, ' ').slice(0, 180) + ' | Armed plan ' + selectedPlan + ' at ' + planActivationAt + '.';
+        addClaimHistoryEntry((sessionName || 'Member') + ' had a Xanax overdose auto-detected within the ' + getPlanWindowLabel(selectedPlan) + ' window for ' + selectedPlan + ' and claim ' + claimId + ' was created automatically.');
         upsertCurrentClaimRecord();
-        autoDetectStatus = 'OD detected and claim queued';
+        autoDetectStatus = 'OD detected in window and claim queued';
         saveSession();
         renderOverlay();
 
         if (apiBase && syncSecret) {
             return syncClaimToBackend().then(function () {
-                autoDetectStatus = 'OD detected and claim synced';
+                autoDetectStatus = 'OD detected in window and claim synced';
                 saveSession();
                 renderOverlay();
                 return true;
             }).catch(function () {
-                autoDetectStatus = 'OD detected - sync pending';
+                autoDetectStatus = 'OD detected in window - sync pending';
                 saveSession();
                 renderOverlay();
                 return null;
@@ -1791,6 +1927,7 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Pride Sin">Select</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="arm-plan" data-plan="Pride Sin">Arm</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Pride Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
@@ -1808,6 +1945,7 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Wrath Sin">Select</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="arm-plan" data-plan="Wrath Sin">Arm</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Wrath Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
@@ -1823,11 +1961,23 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="arm-plan" data-plan="Envy Sin">Arm</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Envy Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
 
-                + '<div class="si-7ds-selected-banner">Selected plan: <strong>' + selectedPlan + '</strong></div>';
+                + '<div class="si-7ds-selected-banner">Selected plan: <strong>' + selectedPlan + '</strong></div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Plan Arm Status</div>'
+                +   '<div class="si-7ds-summary-grid">'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationPlan || selectedPlan || 'None') + '</div><div class="si-7ds-summary-label">Armed plan</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationAt || '—') + '</div><div class="si-7ds-summary-label">Armed at</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationExpiresAt || '—') + '</div><div class="si-7ds-summary-label">Expires</div></div>'
+                +   '</div>'
+                +   '<div class="si-7ds-text"><strong>Energy at arm:</strong> ' + esc(planActivationEnergy || '—') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Booster CD at arm:</strong> ' + esc(planActivationBoosterCd || '—') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Auto detect:</strong> ' + esc(autoDetectStatus || 'Idle') + (autoOdDetectedAt ? ' | Last hit: ' + esc(autoOdDetectedAt) : '') + '</div>'
+                + '</div>';
         }
 
         if (activeTab === 'claims') {
@@ -2029,6 +2179,10 @@
             +     '<label class="si-7ds-label" for="si-login-api-key">Torn API Key</label>'
             +     '<input id="si-login-api-key" class="si-7ds-input" type="text" value="' + esc(memberApiKey || '') + '" placeholder="Paste your Torn API key">'
             +   '</div>'
+            +   '<div class="si-7ds-text">Recommended API access: ' + esc(getRequiredUserSelections()) + '</div>'
+            +   '<div class="si-7ds-plan-actions">'
+            +     '<button type="button" class="si-7ds-btn alt" data-action="open-api-key-page">Open Torn API Key Page</button>'
+            +   '</div>'
             +   '<div class="si-backend-status">'
             +     '<div class="si-7ds-text"><strong>Detected user:</strong> ' + esc(sessionName || 'Guest') + '</div>'
             +     '<div class="si-7ds-text"><strong>Detected role:</strong> ' + esc(sessionRole || 'guest') + '</div>'
@@ -2158,6 +2312,16 @@
             });
         });
 
+        overlay.querySelectorAll('[data-action="arm-plan"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
+                saveSession();
+                armPlanSnapshot(selectedPlan);
+            });
+        });
+
         overlay.querySelectorAll('[data-action="login-api"]').forEach(function (btn) {
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
@@ -2168,6 +2332,12 @@
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () { loginWithApiKey(); });
+        });
+
+        overlay.querySelectorAll('[data-action="open-api-key-page"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { window.open(getCustomKeyUrl(), '_blank'); });
         });
 
         overlay.querySelectorAll('[data-action="logout-session"]').forEach(function (btn) {
