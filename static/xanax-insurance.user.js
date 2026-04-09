@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.9.0
+// @version      2.8.3
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -41,7 +41,8 @@
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
     var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
     var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
-    var adminApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_api_key', '') : '');
+    var authUser = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_user', '') : '');
+    var authPass = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_pass', '') : '');
     var memberApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_member_api_key', '') : '');
     var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '') : '');
     var authMode = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_mode', 'local') : 'local');
@@ -86,7 +87,8 @@
             GM_setValue('si_backend_status', backendStatus || 'Not tested');
             GM_setValue('si_last_sync_at', lastSyncAt || 'Never');
             GM_setValue('si_server_claim_history', serverClaimHistory || '[]');
-            GM_setValue('si_admin_api_key', adminApiKey || '');
+            GM_setValue('si_auth_user', authUser || '');
+            GM_setValue('si_auth_pass', authPass || '');
             GM_setValue('si_member_api_key', memberApiKey || '');
             GM_setValue('si_faction_id_lock', factionIdLock || '');
             GM_setValue('si_auth_mode', authMode || 'local');
@@ -440,7 +442,8 @@
     function buildServerAuthPayload() {
         return {
             mode: authMode || 'local',
-            admin_api_key: adminApiKey || '',
+            username: authUser || '',
+            passcode: authPass || '',
             api_key: memberApiKey || '',
             faction_id: factionIdLock || ''
         };
@@ -509,11 +512,13 @@
 
 
     function saveBackendAuthFromOverlay() {
-        var adminKeyEl = overlay && overlay.querySelector('#si-admin-api-key');
-        var memberKeyEl = overlay && overlay.querySelector('#si-member-api-key');
+        var userEl = overlay && overlay.querySelector('#si-auth-user');
+        var passEl = overlay && overlay.querySelector('#si-auth-pass');
+        var keyEl = overlay && overlay.querySelector('#si-member-api-key');
         var factionEl = overlay && overlay.querySelector('#si-faction-id-lock');
-        if (adminKeyEl) adminApiKey = (adminKeyEl.value || '').trim();
-        if (memberKeyEl) memberApiKey = (memberKeyEl.value || '').trim();
+        if (userEl) authUser = (userEl.value || '').trim();
+        if (passEl) authPass = (passEl.value || '').trim();
+        if (keyEl) memberApiKey = (keyEl.value || '').trim();
         if (factionEl) factionIdLock = (factionEl.value || '').trim();
         saveSession();
         renderOverlay();
@@ -521,28 +526,29 @@
 
     function backendAdminLogin() {
         saveBackendAuthFromOverlay();
-        if (!apiBase || !adminApiKey) {
-            window.alert('Fill in API Base URL and Admin Torn API Key first.');
+        if (!apiBase || !authUser || !authPass) {
+            window.alert('Fill in API Base URL, admin username, and admin passcode first.');
             return Promise.resolve(null);
         }
-        return apiRequest('POST', '/api/auth/admin-key-login', {
-            api_key: adminApiKey,
+        return apiRequest('POST', '/api/auth/admin-login', {
+            username: authUser,
+            passcode: authPass,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
-                sessionName = data.user.name || 'Admin';
-                sessionRole = data.user.role || 'admin';
-                authMode = 'backend-admin-key';
-                backendStatus = 'Admin API key login ok';
+                sessionName = data.user.name || data.user.username || authUser;
+                sessionRole = data.user.role || 'guest';
+                authMode = 'backend-admin';
+                backendStatus = 'Backend admin login ok';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
                 return data;
             }
-            window.alert((data && data.error) ? data.error : 'Admin API key login failed.');
+            window.alert((data && data.error) ? data.error : 'Backend admin login failed.');
             return data;
         }).catch(function () {
-            backendStatus = 'Admin API key login failed';
+            backendStatus = 'Backend admin login failed';
             lastSyncAt = new Date().toLocaleString();
             saveSession();
             renderOverlay();
@@ -586,15 +592,16 @@
         saveBackendAuthFromOverlay();
         if (!apiBase) return Promise.resolve(null);
 
-        if (authMode === 'backend-admin-key') {
-            if (!adminApiKey) return Promise.resolve(null);
-            return apiRequest('POST', '/api/auth/admin-key-login', {
-                api_key: adminApiKey,
+        if (authMode === 'backend-faction') {
+            if (!memberApiKey || !factionIdLock) return Promise.resolve(null);
+            return apiRequest('POST', '/api/auth/faction-login', {
+                api_key: memberApiKey,
+                faction_id: factionIdLock,
                 secret: syncSecret
             }).then(function (data) {
                 if (data && data.ok && data.user) {
-                    sessionName = data.user.name || 'Admin';
-                    sessionRole = data.user.role || 'admin';
+                    sessionName = data.user.name || data.user.username || 'Member';
+                    sessionRole = data.user.role || 'member';
                     saveSession();
                     renderOverlay();
                 }
@@ -602,21 +609,154 @@
             }).catch(function () { return null; });
         }
 
-        if (!memberApiKey || !factionIdLock) return Promise.resolve(null);
-        return apiRequest('POST', '/api/auth/faction-login', {
-            api_key: memberApiKey,
-            faction_id: factionIdLock,
+        if (!authUser || !authPass) return Promise.resolve(null);
+        return apiRequest('POST', '/api/auth/admin-login', {
+            username: authUser,
+            passcode: authPass,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
-                sessionName = data.user.name || data.user.username || 'Member';
-                sessionRole = data.user.role || 'member';
-                authMode = 'backend-faction';
+                sessionName = data.user.name || data.user.username || authUser;
+                sessionRole = data.user.role || 'guest';
                 saveSession();
                 renderOverlay();
             }
             return data;
         }).catch(function () { return null; });
+    }
+
+    function parseMoneyLoose(value) {
+        var s = String(value || '').replace(/[^0-9.]/g, '');
+        var n = parseFloat(s);
+        return isNaN(n) ? 0 : n;
+    }
+
+    function getOverviewStats() {
+        var items = getClaimsDbItems();
+        return {
+            total: items.length,
+            open: items.filter(function (i) { return ['Pending review', 'Under review'].indexOf(String(i && i.status || '')) >= 0; }).length,
+            paid: items.filter(function (i) { return String(i && i.status || '') === 'Paid'; }).length,
+            denied: items.filter(function (i) { return String(i && i.status || '') === 'Denied'; }).length,
+            payouts: items.reduce(function (sum, i) { return sum + parseMoneyLoose(i && i.payout); }, 0),
+            members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length
+        };
+    }
+
+    function getPlanRuleText(plan) {
+        var p = String(plan || '');
+        if (p === 'Pride Sin') return 'single xanax / 1st use only';
+        if (p === 'Wrath Sin') return '1st, 2nd, 3rd, 4th stack only';
+        if (p === 'Envy Sin') return 'full happy jump only';
+        return 'select a plan first';
+    }
+
+    function stackMatchesPlan(plan, stackText) {
+        var t = String(stackText || '').toLowerCase();
+        if (!plan || plan === 'None') return false;
+        if (plan === 'Pride Sin') {
+            return t.indexOf('single') >= 0 || t.indexOf('1st') >= 0 || t.indexOf('first') >= 0 || t === '1';
+        }
+        if (plan === 'Wrath Sin') {
+            return t.indexOf('1st') >= 0 || t.indexOf('2nd') >= 0 || t.indexOf('3rd') >= 0 || t.indexOf('4th') >= 0 || t.indexOf('first') >= 0 || t.indexOf('second') >= 0 || t.indexOf('third') >= 0 || t.indexOf('fourth') >= 0;
+        }
+        if (plan === 'Envy Sin') {
+            return t.indexOf('full') >= 0 || t.indexOf('happy jump') >= 0;
+        }
+        return false;
+    }
+
+    function getPayoutGuide(plan) {
+        var p = String(plan || '');
+        if (p === 'Pride Sin') return 'Guide: small single-use payout';
+        if (p === 'Wrath Sin') return 'Guide: medium stacked-use payout';
+        if (p === 'Envy Sin') return 'Guide: premium full-jump payout';
+        return 'Guide: no plan selected';
+    }
+
+    function getMemberClaimSummary() {
+        var items = getClaimsDbItems().filter(function (item) {
+            return String(item && item.member || '').toLowerCase() === String(sessionName || '').toLowerCase();
+        });
+        return {
+            total: items.length,
+            pending: items.filter(function (i) { return String(i.status || '') === 'Pending review'; }).length,
+            review: items.filter(function (i) { return String(i.status || '') === 'Under review'; }).length,
+            approved: items.filter(function (i) { return String(i.status || '') === 'Approved'; }).length,
+            denied: items.filter(function (i) { return String(i.status || '') === 'Denied'; }).length,
+            paid: items.filter(function (i) { return String(i.status || '') === 'Paid'; }).length,
+        };
+    }
+
+    function getStatusClass(status) {
+        var v = String(status || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        return 'status-' + v.replace(/^-+|-+$/g, '');
+    }
+
+    function getServerClaimHistoryItems() {
+        try {
+            var arr = JSON.parse(serverClaimHistory || '[]');
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function fetchSelectedClaimHistory() {
+        if (!claimId) return Promise.resolve(null);
+        return apiRequest('POST', '/api/claims/history', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload(),
+            claim_id: claimId
+        }).then(function (data) {
+            if (data && data.ok && Array.isArray(data.history)) {
+                serverClaimHistory = JSON.stringify(data.history);
+                backendStatus = 'History loaded';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            backendStatus = 'History load failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    }
+
+    function addServerHistoryToCurrentRender(localHtml) {
+        var items = getServerClaimHistoryItems();
+        if (!items.length) return localHtml;
+        return items.map(function (item) {
+            return '<div class="si-7ds-history-item">'
+                + '<div class="si-7ds-history-time">' + esc(item.createdAt || '') + '</div>'
+                + '<div class="si-7ds-history-text">' + esc(item.text || '') + '</div>'
+            + '</div>';
+        }).join('');
+    }
+
+    function bulkSetVisibleClaimsStatus(nextStatus) {
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        var items = getFilteredClaimsDbItems();
+        if (!items.length) {
+            window.alert('No visible claims to update.');
+            return;
+        }
+        items.forEach(function (item) {
+            if (!item || !item.id) return;
+            selectedClaimId = item.id;
+            syncCurrentFromSelectedClaim();
+            claimStatus = nextStatus;
+            upsertCurrentClaimRecord();
+        });
+        saveSession();
+        renderOverlay();
+        window.alert('Updated ' + String(items.length) + ' visible claims to ' + nextStatus + '.');
     }
 
     function addStyles() {
@@ -1411,8 +1551,8 @@
             +     '<span class="si-7ds-role-badge">Plan: ' + selectedPlan + '</span>'
             +   '</div>'
             +   '<div class="si-7ds-auth-actions">'
-            +     '<button type="button" class="si-7ds-btn" data-action="login-member">Member Local</button>'
-            +     '<button type="button" class="si-7ds-btn alt" data-action="login-admin">Admin Local</button>'
+            +     '<button type="button" class="si-7ds-btn" data-action="login-member">Member Login</button>'
+            +     '<button type="button" class="si-7ds-btn alt" data-action="login-admin">Admin Login</button>'
             +     '<button type="button" class="si-7ds-btn alt" data-action="logout-session">Logout</button>'
             +   '</div>'
             + '</div>'
@@ -1472,8 +1612,8 @@
             +   '</div>'
             +   '<div class="si-7ds-plan-actions">'
             +     '<button type="button" class="si-7ds-btn" data-action="save-backend-auth">Save Backend Login</button>'
-            +     '<button type="button" class="si-7ds-btn alt" data-action="backend-member-login">Faction Member Local</button>'
-            +     '<button type="button" class="si-7ds-btn alt" data-action="backend-admin-login">Admin Local</button>'
+            +     '<button type="button" class="si-7ds-btn alt" data-action="backend-member-login">Faction Member Login</button>'
+            +     '<button type="button" class="si-7ds-btn alt" data-action="backend-admin-login">Admin Login</button>'
             +     '<button type="button" class="si-7ds-btn alt" data-action="backend-whoami">Refresh Role</button>'
             +   '</div>'
             + '</div>'
