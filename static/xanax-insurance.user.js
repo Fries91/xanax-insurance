@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.8.6
+// @version      2.8.7
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -39,7 +39,7 @@
     var claimFilterMember = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_member', '') : '');
     var claimSortMode = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_sort_mode', 'newest') : 'newest');
     var apiBase = (typeof GM_getValue === 'function' ? GM_getValue('si_api_base', 'https://xanax-insurance.onrender.com') : 'https://xanax-insurance.onrender.com');
-    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '') : '');
+    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '6282') : '');
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
     var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
     var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
@@ -53,7 +53,7 @@
     var authUser = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_user', '') : '');
     var authPass = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_pass', '') : '');
     var memberApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_member_api_key', '') : '');
-    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '') : '');
+    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '49384') : '');
     var authMode = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_mode', 'local') : 'local');
     var planActivationAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_at', '') : '');
     var planActivationPlan = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_plan', '') : '');
@@ -1042,23 +1042,24 @@
 
     function backendAdminLogin() {
         saveBackendAuthFromOverlay();
-        if (!apiBase || !authUser || !authPass) {
-            window.alert('Fill in API Base URL, admin username, and admin passcode first.');
+        if (!apiBase || !memberApiKey) {
+            window.alert('Fill in API Base URL and your admin Torn API key first.');
             return Promise.resolve(null);
         }
-        return apiRequest('POST', '/api/auth/admin-login', {
-            username: authUser,
-            passcode: authPass,
+        return apiRequest('POST', '/api/auth/admin-key-login', {
+            api_key: memberApiKey,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
-                sessionName = data.user.name || data.user.username || authUser;
-                sessionRole = data.user.role || 'guest';
-                authMode = 'backend-admin';
+                sessionName = data.user.name || data.user.username || 'Admin';
+                sessionRole = data.user.role || 'admin';
+                authMode = 'backend-admin-key';
                 backendStatus = 'Backend admin login ok';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
+                startAdminClaimNotifications();
+                startMemberAutoDetection();
                 return data;
             }
             window.alert((data && data.error) ? data.error : 'Backend admin login failed.');
@@ -1106,18 +1107,19 @@
 
     function backendWhoAmI() {
         saveBackendAuthFromOverlay();
-        if (!apiBase) return Promise.resolve(null);
+        if (!apiBase || !syncSecret) return Promise.resolve(null);
 
-        if (authMode === 'backend-faction') {
-            if (!memberApiKey || !factionIdLock) return Promise.resolve(null);
-            return apiRequest('POST', '/api/auth/faction-login', {
+        if (authMode === 'backend-admin-key') {
+            if (!memberApiKey) return Promise.resolve(null);
+            return apiRequest('POST', '/api/auth/admin-key-login', {
                 api_key: memberApiKey,
-                faction_id: factionIdLock,
                 secret: syncSecret
             }).then(function (data) {
                 if (data && data.ok && data.user) {
-                    sessionName = data.user.name || data.user.username || 'Member';
-                    sessionRole = data.user.role || 'member';
+                    sessionName = data.user.name || data.user.username || 'Admin';
+                    sessionRole = data.user.role || 'admin';
+                    backendStatus = 'Backend admin login ok';
+                    lastSyncAt = new Date().toLocaleString();
                     saveSession();
                     renderOverlay();
                 }
@@ -1125,15 +1127,17 @@
             }).catch(function () { return null; });
         }
 
-        if (!authUser || !authPass) return Promise.resolve(null);
-        return apiRequest('POST', '/api/auth/admin-login', {
-            username: authUser,
-            passcode: authPass,
+        if (!memberApiKey || !factionIdLock) return Promise.resolve(null);
+        return apiRequest('POST', '/api/auth/faction-login', {
+            api_key: memberApiKey,
+            faction_id: factionIdLock,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
-                sessionName = data.user.name || data.user.username || authUser;
-                sessionRole = data.user.role || 'guest';
+                sessionName = data.user.name || data.user.username || 'Member';
+                sessionRole = data.user.role || 'member';
+                backendStatus = 'Faction member login ok';
+                lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
             }
@@ -1328,8 +1332,8 @@
         GM_addStyle(`
 #si-7ds-launcher {
   position: fixed !important;
-  left: env(safe-area-inset-left, 0px) !important;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
+  right: calc(env(safe-area-inset-right, 0px) + 10px) !important;
+  top: calc(env(safe-area-inset-top, 0px) + 116px) !important;
   width: 170px !important;
   height: 34px !important;
   z-index: 2147483647 !important;
@@ -2166,7 +2170,7 @@
             + '</div>'
             + '<div class="si-7ds-card">'
             +   '<div class="si-7ds-card-title">Current Setup</div>'
-            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Launcher</div><div class="si-7ds-setting-value">Bottom-left locked</div></div>'
+            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Launcher</div><div class="si-7ds-setting-value">Top-right locked</div></div>'
             +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Theme</div><div class="si-7ds-setting-value">7 Deadly Sins crimson/gold</div></div>'
             +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Overlay</div><div class="si-7ds-setting-value">4 tabs active</div></div>'
             +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Plans</div><div class="si-7ds-setting-value">Pride / Wrath / Envy</div></div>'
@@ -2496,6 +2500,42 @@
     function startRemountWatch() {
         if (remountTimer) clearInterval(remountTimer);
         remountTimer = setInterval(ensureMounted, 1000);
+
+        if (!window.__si7dsObserver) {
+            window.__si7dsObserver = new MutationObserver(function () {
+                ensureMounted();
+            });
+            try {
+                window.__si7dsObserver.observe(document.documentElement || document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            } catch (e) {}
+        }
+
+        if (!window.__si7dsHistoryPatch) {
+            window.__si7dsHistoryPatch = true;
+            ['pushState', 'replaceState'].forEach(function (method) {
+                try {
+                    var original = history[method];
+                    if (typeof original === 'function') {
+                        history[method] = function () {
+                            var out = original.apply(this, arguments);
+                            setTimeout(ensureMounted, 50);
+                            setTimeout(ensureMounted, 500);
+                            return out;
+                        };
+                    }
+                } catch (e) {}
+            });
+            window.addEventListener('popstate', function () {
+                setTimeout(ensureMounted, 50);
+                setTimeout(ensureMounted, 500);
+            });
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) ensureMounted();
+            });
+        }
     }
 
     function startAdminClaimNotifications() {
