@@ -67,8 +67,15 @@
         overview: 'Overview',
         plans: 'Plans',
         claims: 'Claims',
+        admin: 'Admin',
         settings: 'Settings'
     };
+
+    function getVisibleTabKeys() {
+        return isAdmin()
+            ? ['overview', 'plans', 'claims', 'admin', 'settings']
+            : ['overview', 'plans', 'claims', 'settings'];
+    }
 
     var ADMIN_USER_IDS = ['3679030'];
 
@@ -1614,7 +1621,7 @@
 }
 #si-7ds-overlay .si-7ds-tabrow {
   display: grid !important;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
   gap: 8px !important;
   padding: 12px 14px 0 !important;
 }
@@ -2003,8 +2010,10 @@
     }
 
     function renderTabRow() {
+        var keys = getVisibleTabKeys();
+        if (keys.indexOf(activeTab) < 0) activeTab = 'overview';
         return '<div class="si-7ds-tabrow">'
-            + Object.keys(TAB_LABELS).map(function (key) {
+            + keys.map(function (key) {
                 return '<button type="button" class="si-7ds-tab' + (activeTab === key ? ' active' : '') + '" data-tab="' + key + '">' + TAB_LABELS[key] + '</button>';
             }).join('')
             + '</div>';
@@ -2074,9 +2083,9 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-grid">'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Rule</div><div class="si-7ds-plan-stat-value">Happy jump</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Premium payout</div></div>
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Premium payout</div></div>'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">30 mins</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">Arm tracked</div></div>''
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">Arm tracked</div></div>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select</button>'
@@ -2217,50 +2226,6 @@
                         + '</div>'
                       + '</div>'
                     : '')
-                + (isAdmin()
-                    ? '<div class="si-7ds-card">'
-                        + '<div class="si-7ds-card-title">Admin Queue</div>'
-                        + '<div class="si-7ds-summary-grid">'
-                          + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().pending) + '</div><div class="si-7ds-summary-label">Pending</div></div>'
-                          + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().review) + '</div><div class="si-7ds-summary-label">Review</div></div>'
-                          + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().approved) + '</div><div class="si-7ds-summary-label">Approved</div></div>'
-                          + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
-                        + '</div>'
-                      + '</div>'
-                    : '')
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">Claim Filters</div>'
-                +   '<div class="si-7ds-filter-grid">'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-filter-status">Status</label>'
-                +       '<select id="si-claim-filter-status" class="si-7ds-select">'
-                +         '<option value="all"' + (claimFilterStatus === 'all' ? ' selected' : '') + '>All</option>'
-                +         '<option value="Pending review"' + (claimFilterStatus === 'Pending review' ? ' selected' : '') + '>Pending</option>'
-                +         '<option value="Under review"' + (claimFilterStatus === 'Under review' ? ' selected' : '') + '>Review</option>'
-                +         '<option value="Approved"' + (claimFilterStatus === 'Approved' ? ' selected' : '') + '>Approved</option>'
-                +         '<option value="Denied"' + (claimFilterStatus === 'Denied' ? ' selected' : '') + '>Denied</option>'
-                +         '<option value="Paid"' + (claimFilterStatus === 'Paid' ? ' selected' : '') + '>Paid</option>'
-                +       + '</select>'
-                +     '</div>'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-filter-member">Member</label>'
-                +       '<input id="si-claim-filter-member" class="si-7ds-input" type="text" value="' + esc(claimFilterMember || '') + '" placeholder="Search member">'
-                +     '</div>'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label" for="si-claim-sort-mode">Sort</label>'
-                +       '<select id="si-claim-sort-mode" class="si-7ds-select">'
-                +         '<option value="newest"' + (claimSortMode === 'newest' ? ' selected' : '') + '>Newest</option>'
-                +         '<option value="oldest"' + (claimSortMode === 'oldest' ? ' selected' : '') + '>Oldest</option>'
-                +         '<option value="member_az"' + (claimSortMode === 'member_az' ? ' selected' : '') + '>Member A-Z</option>'
-                +         '<option value="status"' + (claimSortMode === 'status' ? ' selected' : '') + '>Status</option>'
-                +       + '</select>'
-                +     '</div>'
-                +     '<div class="si-7ds-field">'
-                +       '<label class="si-7ds-label">Visible</label>'
-                +       '<div class="si-7ds-text">' + String(getFilteredClaimsDbItems().length) + '</div>'
-                +     '</div>'
-                +   '</div>'
-                + '</div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Claims</div>'
                 +   '<div class="si-7ds-field">'
@@ -2279,15 +2244,150 @@
                 +   memberForm
                 +   '<div class="si-7ds-plan-actions">' + memberActions + '</div>'
                 + '</div>'
-                + adminPanel
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">History</div>'
                 +   '<div class="si-7ds-list">' + addServerHistoryToCurrentRender(historyItems) + '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-history">Refresh</button>'
-                +     + (isAdmin() ? '<button type="button" class="si-7ds-btn alt" data-action="clear-history">Clear Local</button>' : '')
                 +   '</div>'
                 + '</div>';
+        }
+
+        if (activeTab === 'admin') {
+            syncCurrentFromSelectedClaim();
+            var adminClaimOptions = getFilteredClaimsDbItems().length
+                ? getFilteredClaimsDbItems().map(function (item) {
+                    var label = (item.id || 'No ID')
+                        + ' | ' + (item.member || 'Unknown member')
+                        + ' | ' + (item.plan || 'No plan')
+                        + ' | ' + (item.status || 'No status');
+                    var sel = (item.id === selectedClaimId || (!selectedClaimId && item.id === claimId)) ? ' selected' : '';
+                    return '<option value="' + esc(item.id || '') + '"' + sel + '>' + esc(label) + '</option>';
+                }).join('')
+                : '<option value="">No matching claims</option>';
+
+            var adminPanel = isAdmin()
+                ? '<div class="si-7ds-card">'
+                    + '<div class="si-7ds-card-title">Admin Review</div>'
+                    + '<div class="si-7ds-admin-panel">'
+                      + '<div class="si-7ds-pillrow">'
+                        + '<span class="si-7ds-pill">Admin mode</span>'
+                        + '<span class="si-7ds-pill">Claim ' + esc(claimId || 'none') + '</span>'
+                        + '<span class="si-7ds-pill">' + esc(claimStatus || 'Not submitted') + '</span>'
+                      + '</div>'
+                      + '<div class="si-7ds-summary-grid">'
+                        + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc((getSelectedClaimRecord() && getSelectedClaimRecord().member) || '—') + '</div><div class="si-7ds-summary-label">Member</div></div>'
+                        + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(selectedPlan || 'None') + '</div><div class="si-7ds-summary-label">Plan</div></div>'
+                        + '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc((getSelectedClaimRecord() && getSelectedClaimRecord().updatedAt) || '—') + '</div><div class="si-7ds-summary-label">Updated</div></div>'
+                      + '</div>'
+                      + '<div class="si-7ds-note-box">'
+                        + '<div class="si-7ds-text"><strong>Stack:</strong> ' + esc(claimStack || 'Not set') + '</div>'
+                        + '<div class="si-7ds-text"><strong>Loss:</strong> ' + esc(claimLoss || 'Not set') + '</div>'
+                        + '<div class="si-7ds-text"><strong>Proof:</strong> ' + esc(claimProof || 'Not set') + '</div>'
+                        + '<div class="si-7ds-text"><strong>Member note:</strong> ' + esc(claimNote || 'None') + '</div>'
+                      + '</div>'
+                      + '<div class="si-7ds-field">'
+                        + '<label class="si-7ds-label" for="si-payout-amount">Payout Amount</label>'
+                        + '<input id="si-payout-amount" class="si-7ds-input" type="text" placeholder="Example: 5 Xanax or 3 E-DVDs" value="' + esc(payoutAmount) + '">'
+                      + '</div>'
+                      + '<div class="si-7ds-text"><strong>Payout guide:</strong> ' + esc(getPayoutGuide(selectedPlan)) + '</div>'
+                      + '<div class="si-7ds-admin-note-box">'
+                        + '<div class="si-7ds-field">'
+                          + '<label class="si-7ds-label" for="si-decision-note">Decision Note</label>'
+                          + '<textarea id="si-decision-note" class="si-7ds-textarea" placeholder="Admin decision notes">' + esc(decisionNote) + '</textarea>'
+                        + '</div>'
+                      + '</div>'
+                      + '<div class="si-7ds-admin-actions-grid">'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="save-admin-draft">Save Review Draft</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="next-open-claim">Next Open</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="review-claim">Mark Review</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="approve-claim">Approve</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="deny-claim">Deny</button>'
+                        + '<button type="button" class="si-7ds-btn confirm" data-action="pay-claim">Confirm Payout</button>'
+                      + '</div>'
+                      + '<div class="si-7ds-text"><strong>Current payout:</strong> ' + esc(payoutAmount || 'Not set') + '</div>'
+                      + '<div class="si-7ds-admin-actions-grid">'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="bulk-review">Bulk Review Visible</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="bulk-approve">Bulk Approve Visible</button>'
+                        + '<button type="button" class="si-7ds-btn alt" data-action="bulk-deny">Bulk Deny Visible</button>'
+                        + '<button type="button" class="si-7ds-btn confirm" data-action="bulk-pay">Bulk Pay Visible</button>'
+                      + '</div>'
+                    + '</div>'
+                  + '</div>'
+                : '';
+
+            return isAdmin() ? ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Admin Queue</div>'
+                +   '<div class="si-7ds-summary-grid">'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().pending) + '</div><div class="si-7ds-summary-label">Pending</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().review) + '</div><div class="si-7ds-summary-label">Review</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().approved) + '</div><div class="si-7ds-summary-label">Approved</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getAdminQueueSummary().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim Filters</div>'
+                +   '<div class="si-7ds-filter-grid">'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-filter-status">Status</label>'
+                +       '<select id="si-claim-filter-status" class="si-7ds-select">'
+                +         '<option value="all"' + (claimFilterStatus === 'all' ? ' selected' : '') + '>All</option>'
+                +         '<option value="Pending review"' + (claimFilterStatus === 'Pending review' ? ' selected' : '') + '>Pending</option>'
+                +         '<option value="Under review"' + (claimFilterStatus === 'Under review' ? ' selected' : '') + '>Review</option>'
+                +         '<option value="Approved"' + (claimFilterStatus === 'Approved' ? ' selected' : '') + '>Approved</option>'
+                +         '<option value="Denied"' + (claimFilterStatus === 'Denied' ? ' selected' : '') + '>Denied</option>'
+                +         '<option value="Paid"' + (claimFilterStatus === 'Paid' ? ' selected' : '') + '>Paid</option>'
+                +       '</select>'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-filter-member">Member</label>'
+                +       '<input id="si-claim-filter-member" class="si-7ds-input" type="text" value="' + esc(claimFilterMember || '') + '" placeholder="Search member">'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label" for="si-claim-sort-mode">Sort</label>'
+                +       '<select id="si-claim-sort-mode" class="si-7ds-select">'
+                +         '<option value="newest"' + (claimSortMode === 'newest' ? ' selected' : '') + '>Newest</option>'
+                +         '<option value="oldest"' + (claimSortMode === 'oldest' ? ' selected' : '') + '>Oldest</option>'
+                +         '<option value="member_az"' + (claimSortMode === 'member_az' ? ' selected' : '') + '>Member A-Z</option>'
+                +         '<option value="status"' + (claimSortMode === 'status' ? ' selected' : '') + '>Status</option>'
+                +       '</select>'
+                +     '</div>'
+                +     '<div class="si-7ds-field">'
+                +       '<label class="si-7ds-label">Visible</label>'
+                +       '<div class="si-7ds-text">' + String(getFilteredClaimsDbItems().length) + '</div>'
+                +     '</div>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Claim Selector</div>'
+                +   '<div class="si-7ds-field">'
+                +     '<select id="si-claim-select" class="si-7ds-select">' + adminClaimOptions + '</select>'
+                +   '</div>'
+                + '</div>'
+                + adminPanel
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">Backend Sync Settings</div>'
+                +   '<div class="si-7ds-field">'
+                +     '<label class="si-7ds-label" for="si-api-base">API Base URL</label>'
+                +     '<input id="si-api-base" class="si-7ds-input" type="text" value="' + esc(apiBase || '') + '" placeholder="https://xanax-insurance.onrender.com">'
+                +   '</div>'
+                +   '<div class="si-7ds-field">'
+                +     '<label class="si-7ds-label" for="si-sync-secret">Sync Secret</label>'
+                +     '<input id="si-sync-secret" class="si-7ds-input" type="text" value="' + esc(syncSecret || '6282') + '" placeholder="6282">'
+                +   '</div>'
+                +   '<div class="si-backend-status">'
+                +     '<div class="si-7ds-text"><strong>Status:</strong> ' + esc(backendStatus || 'Not tested') + '</div>'
+                +     '<div class="si-7ds-text"><strong>Last sync:</strong> ' + esc(lastSyncAt || 'Never') + '</div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="save-sync-settings">Save Sync Settings</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="test-backend">Test Backend</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="pull-claims">Pull Claims</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="clear-history">Clear Local</button>'
+                +   '</div>'
+                + '</div>'
+                : '';
         }
 
         return ''
@@ -2325,31 +2425,9 @@
             +   '<div class="si-7ds-card-title">Current Setup</div>'
             +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Launcher</div><div class="si-7ds-setting-value">Bottom-left locked</div></div>'
             +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Theme</div><div class="si-7ds-setting-value">7 Deadly Sins crimson/gold</div></div>'
-            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Overlay</div><div class="si-7ds-setting-value">4 tabs active</div></div>'
+            +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Overlay</div><div class="si-7ds-setting-value">' + (isAdmin() ? '5 tabs active' : '4 tabs active') + '</div></div>'
             +   '<div class="si-7ds-setting-row"><div class="si-7ds-setting-label">Plans</div><div class="si-7ds-setting-value">Pride / Wrath / Envy</div></div>'
             + '</div>'
-            + ((!isMember() || isAdmin())
-                ? '<div class="si-7ds-card">'
-                    + '<div class="si-7ds-card-title">Backend Sync Settings</div>'
-                    + '<div class="si-7ds-field">'
-                    +   '<label class="si-7ds-label" for="si-api-base">API Base URL</label>'
-                    +   '<input id="si-api-base" class="si-7ds-input" type="text" value="' + esc(apiBase || '') + '" placeholder="https://xanax-insurance.onrender.com">'
-                    + '</div>'
-                    + '<div class="si-7ds-field">'
-                    +   '<label class="si-7ds-label" for="si-sync-secret">Sync Secret</label>'
-                    +   '<input id="si-sync-secret" class="si-7ds-input" type="text" value="' + esc(syncSecret || '6282') + '" placeholder="6282">'
-                    + '</div>'
-                    + '<div class="si-backend-status">'
-                    +   '<div class="si-7ds-text"><strong>Status:</strong> ' + esc(backendStatus || 'Not tested') + '</div>'
-                    +   '<div class="si-7ds-text"><strong>Last sync:</strong> ' + esc(lastSyncAt || 'Never') + '</div>'
-                    + '</div>'
-                    + '<div class="si-7ds-plan-actions">'
-                    +   '<button type="button" class="si-7ds-btn" data-action="save-sync-settings">Save Sync Settings</button>'
-                    +   '<button type="button" class="si-7ds-btn alt" data-action="test-backend">Test Backend</button>'
-                    +   '<button type="button" class="si-7ds-btn alt" data-action="pull-claims">Pull Claims</button>'
-                    + '</div>'
-                  + '</div>'
-                : '')
             + '<div class="si-7ds-card">'
             +   '<div class="si-7ds-card-title">Builder Notes</div>'
             +   '<div class="si-7ds-text">API key login detects member vs admin automatically, uses the live backend routes, and keeps admin-only claim controls hidden from standard members.</div>'
