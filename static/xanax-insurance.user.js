@@ -48,6 +48,7 @@
     var autoOdFingerprint = (typeof GM_getValue === 'function' ? GM_getValue('si_auto_od_fingerprint', '') : '');
     var autoOdDetectedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_auto_od_detected_at', '') : '');
     var memberAutoDetectTimer = null;
+    var armedCountdownTimer = null;
     var adminNotifyEnabled = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_notify_enabled', true) : true);
     var adminNotifyTimer = null;
     var authUser = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_user', '') : '');
@@ -57,6 +58,7 @@
     var authMode = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_mode', 'local') : 'local');
     var planActivationAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_at', '') : '');
     var planActivationPlan = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_plan', '') : '');
+    var planActivationStage = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_stage', '') : '');
     var planActivationEnergy = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_energy', '') : '');
     var planActivationBoosterCd = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_booster_cd', '') : '');
     var planActivationExpiresAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_expires_at', '') : '');
@@ -115,6 +117,7 @@
             GM_setValue('si_auth_mode', authMode || 'local');
             GM_setValue('si_plan_activation_at', planActivationAt || '');
             GM_setValue('si_plan_activation_plan', planActivationPlan || '');
+            GM_setValue('si_plan_activation_stage', planActivationStage || '');
             GM_setValue('si_plan_activation_energy', planActivationEnergy || '');
             GM_setValue('si_plan_activation_booster_cd', planActivationBoosterCd || '');
             GM_setValue('si_plan_activation_expires_at', planActivationExpiresAt || '');
@@ -244,17 +247,34 @@
     }
 
     function getPlanWindowMinutes(plan) {
-        if (plan === 'Pride Sin') return 60;
-        if (plan === 'Wrath Sin') return 2880;
-        if (plan === 'Envy Sin') return 2880;
-        return 60;
+        return 30;
     }
 
     function getPlanWindowLabel(plan) {
-        if (plan === 'Pride Sin') return '1 hour';
-        if (plan === 'Wrath Sin') return '48 hours';
-        if (plan === 'Envy Sin') return '48 hours';
-        return '1 hour';
+        return '30 mins';
+    }
+
+    function getWrathStageConfig(stage) {
+        var s = String(stage || '').replace(/[^1-4]/g, '');
+        if (s === '2') return { stage: '2', label: 'Stage 2', paymentQty: '10 Xanax', expectedLoss: '500 energy lost', stack: '2nd' };
+        if (s === '3') return { stage: '3', label: 'Stage 3', paymentQty: '15 Xanax', expectedLoss: '750 energy lost', stack: '3rd' };
+        if (s === '4') return { stage: '4', label: 'Stage 4', paymentQty: '20 Xanax', expectedLoss: '1000 energy lost', stack: '4th' };
+        return { stage: '1', label: 'Stage 1', paymentQty: '5 Xanax', expectedLoss: '250 energy lost', stack: '1st' };
+    }
+
+    function getArmedPlanDisplayName() {
+        if (planActivationPlan === 'Wrath Sin' && planActivationStage) {
+            return 'Wrath Sin ' + getWrathStageConfig(planActivationStage).label;
+        }
+        return planActivationPlan || selectedPlan || 'None';
+    }
+
+    function getArmedPaymentDisplay() {
+        if (planActivationPlan === 'Wrath Sin' && planActivationStage) {
+            return getWrathStageConfig(planActivationStage).paymentQty;
+        }
+        if (planActivationPlan === 'Pride Sin') return '2 Xanax';
+        return '—';
     }
 
     function parseIsoOrLocalTimestamp(raw) {
@@ -282,16 +302,84 @@
         return parts.join(' ');
     }
 
-    function armPlanSnapshot(plan) {
+    function isPlanArmedActive(plan, stage) {
+        var armedPlan = String(planActivationPlan || '');
+        if (!armedPlan || !planActivationAt || !planActivationExpiresAt) return false;
+        if (plan && armedPlan !== String(plan)) return false;
+        if (String(plan || '') === 'Wrath Sin' && stage && String(planActivationStage || '') !== String(stage)) return false;
+        return Date.now() < parseIsoOrLocalTimestamp(planActivationExpiresAt);
+    }
+
+    function getArmedCountdownMs() {
+        var expiresMs = parseIsoOrLocalTimestamp(planActivationExpiresAt);
+        if (!expiresMs) return 0;
+        return Math.max(0, expiresMs - Date.now());
+    }
+
+    function formatDurationMs(ms) {
+        var total = Math.max(0, Math.floor((ms || 0) / 1000));
+        var hours = Math.floor(total / 3600);
+        var minutes = Math.floor((total % 3600) / 60);
+        var seconds = total % 60;
+        if (hours) return String(hours) + 'h ' + String(minutes).padStart(2, '0') + 'm ' + String(seconds).padStart(2, '0') + 's';
+        return String(minutes) + 'm ' + String(seconds).padStart(2, '0') + 's';
+    }
+
+    function clearArmedPlanState(reason, keepDetectStatus) {
+        var hadArmedPlan = !!planActivationPlan;
+        planActivationAt = '';
+        planActivationPlan = '';
+        planActivationStage = '';
+        planActivationEnergy = '';
+        planActivationBoosterCd = '';
+        planActivationExpiresAt = '';
+        if (!keepDetectStatus) {
+            autoDetectStatus = reason || 'Idle';
+        }
+        saveSession();
+        if (hadArmedPlan) renderOverlay();
+    }
+
+    function refreshArmedPlanState() {
+        if (!planActivationPlan || !planActivationExpiresAt) return false;
+        var expiresMs = parseIsoOrLocalTimestamp(planActivationExpiresAt);
+        if (!expiresMs) return false;
+        if (Date.now() < expiresMs) return true;
+        var expiredPlan = getArmedPlanDisplayName();
+        clearArmedPlanState('Plan window ended - no OD detected', false);
+        addClaimHistoryEntry((sessionName || 'Member') + ' plan window expired for ' + expiredPlan + '.');
+        return false;
+    }
+
+    function updateArmedCountdownDisplay() {
+        var active = refreshArmedPlanState();
+        var countdownEls = document.querySelectorAll('#si-7ds-armed-countdown');
+        if (!countdownEls.length) return;
+        var textValue = active ? formatDurationMs(getArmedCountdownMs()) : 'Expired';
+        countdownEls.forEach(function (el) { el.textContent = textValue; });
+    }
+
+    function startArmedCountdownWatch() {
+        if (armedCountdownTimer) clearInterval(armedCountdownTimer);
+        armedCountdownTimer = setInterval(function () {
+            updateArmedCountdownDisplay();
+        }, 1000);
+        updateArmedCountdownDisplay();
+    }
+
+    function armPlanSnapshot(plan, stage) {
         var now = new Date();
         planActivationPlan = plan || selectedPlan || 'None';
+        planActivationStage = planActivationPlan === 'Wrath Sin' ? String(stage || '1') : '';
         planActivationAt = now.toLocaleString();
         planActivationEnergy = '';
         planActivationBoosterCd = '';
         planActivationExpiresAt = new Date(now.getTime() + (getPlanWindowMinutes(planActivationPlan) * 60 * 1000)).toLocaleString();
-        autoDetectStatus = 'Arming ' + (planActivationPlan || 'plan') + '...';
+        autoOdFingerprint = '';
+        autoDetectStatus = 'Arming ' + (planActivationPlan === 'Wrath Sin' ? getArmedPlanDisplayName() : (planActivationPlan || 'plan')) + '...';
         saveSession();
         renderOverlay();
+        startArmedCountdownWatch();
 
         if (!memberApiKey) {
             autoDetectStatus = 'Plan armed - API key needed for live snapshot';
@@ -302,7 +390,7 @@
 
         return getTornBarsAndCooldowns(memberApiKey).then(function (data) {
             if (data && data.error) {
-                autoDetectStatus = 'Plan armed - snapshot partial';
+                autoDetectStatus = (planActivationPlan === 'Wrath Sin' ? getArmedPlanDisplayName() : 'Plan') + ' armed - snapshot partial';
                 saveSession();
                 renderOverlay();
                 return data;
@@ -315,12 +403,12 @@
             planActivationEnergy = energyCurrent !== '' ? String(energyCurrent) + (energyMax !== '' ? '/' + String(energyMax) : '') : '';
             var boosterSecs = cooldowns && cooldowns.booster !== undefined ? cooldowns.booster : '';
             planActivationBoosterCd = boosterSecs !== '' ? formatCooldownSeconds(boosterSecs) : '';
-            autoDetectStatus = 'Plan armed - waiting for OD in ' + getPlanWindowLabel(planActivationPlan);
+            autoDetectStatus = (planActivationPlan === 'Wrath Sin' ? getArmedPlanDisplayName() : 'Plan') + ' armed - waiting for OD in ' + getPlanWindowLabel(planActivationPlan);
             saveSession();
             renderOverlay();
             return data;
         }).catch(function () {
-            autoDetectStatus = 'Plan armed - snapshot partial';
+            autoDetectStatus = (planActivationPlan === 'Wrath Sin' ? getArmedPlanDisplayName() : 'Plan') + ' armed - snapshot partial';
             saveSession();
             renderOverlay();
             return null;
@@ -429,6 +517,7 @@
         var text = String(entryText || '').toLowerCase();
         if (plan === 'Pride Sin') return 'single';
         if (plan === 'Wrath Sin') {
+            if (planActivationStage) return getWrathStageConfig(planActivationStage).stack;
             if (text.indexOf('1000') >= 0) return '4th';
             if (text.indexOf('750') >= 0) return '3rd';
             if (text.indexOf('500') >= 0) return '2nd';
@@ -441,6 +530,7 @@
     function getAutoLossFromOd(plan, entryText) {
         var text = String(entryText || '');
         if (plan === 'Wrath Sin') {
+            if (planActivationStage) return getWrathStageConfig(planActivationStage).expectedLoss;
             if (text.indexOf('1000') >= 0) return '1000 energy lost';
             if (text.indexOf('750') >= 0) return '750 energy lost';
             if (text.indexOf('500') >= 0) return '500 energy lost';
@@ -494,6 +584,22 @@
             return Promise.resolve(null);
         }
 
+        if (selectedPlan === 'Wrath Sin' && planActivationStage) {
+            var expected = getWrathStageConfig(planActivationStage);
+            var detectedStack = getAutoStackFromOd('Wrath Sin', entry.text);
+            if (detectedStack !== expected.stack) {
+                autoDetectStatus = 'OD found - wrong Wrath stage';
+                claimStatus = 'Detected - wrong stage';
+                claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+                claimProof = buildAutoProofNote(entry);
+                claimNote = 'Auto-detected Xanax overdose did not match the armed Wrath stage. Armed ' + expected.label + ' but detected ' + detectedStack + '.';
+                claimStack = detectedStack;
+                saveSession();
+                renderOverlay();
+                return Promise.resolve(null);
+            }
+        }
+
         var armedAtMs = parseIsoOrLocalTimestamp(planActivationAt);
         var odAtMs = (entry.timestamp || 0) * 1000;
         var windowMs = getPlanWindowMinutes(selectedPlan) * 60 * 1000;
@@ -515,10 +621,11 @@
         claimStatus = 'Pending review';
         claimStack = getAutoStackFromOd(selectedPlan, entry.text);
         claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
-        claimProof = buildAutoProofNote(entry) + ' | Armed ' + planActivationAt + ' | Energy ' + (planActivationEnergy || 'unknown') + ' | Booster CD ' + (planActivationBoosterCd || 'unknown');
-        claimNote = 'Auto-detected via Torn API within ' + getPlanWindowLabel(selectedPlan) + ': ' + String(entry.text || '').replace(/\s+/g, ' ').slice(0, 180) + ' | Armed plan ' + selectedPlan + ' at ' + planActivationAt + '.';
+        claimProof = buildAutoProofNote(entry) + ' | Armed ' + planActivationAt + ' | Energy ' + (planActivationEnergy || 'unknown') + ' | Booster CD ' + (planActivationBoosterCd || 'unknown') + (planActivationStage ? ' | Wrath stage ' + planActivationStage : '');
+        claimNote = 'Auto-detected via Torn API within ' + getPlanWindowLabel(selectedPlan) + ': ' + String(entry.text || '').replace(/\s+/g, ' ').slice(0, 180) + ' | Armed plan ' + getArmedPlanDisplayName() + ' at ' + planActivationAt + (planActivationPlan === 'Wrath Sin' && planActivationStage ? ' | Required payment ' + getWrathStageConfig(planActivationStage).paymentQty : '') + '.';
         addClaimHistoryEntry((sessionName || 'Member') + ' had a Xanax overdose auto-detected within the ' + getPlanWindowLabel(selectedPlan) + ' window for ' + selectedPlan + ' and claim ' + claimId + ' was created automatically.');
         upsertCurrentClaimRecord();
+        clearArmedPlanState('OD detected in active window', true);
         autoDetectStatus = 'OD detected in window and claim queued';
         saveSession();
         renderOverlay();
@@ -541,6 +648,7 @@
 
     function runMemberAutoDetection() {
         if (!isMember() || !memberApiKey) return Promise.resolve(null);
+        if (!refreshArmedPlanState()) return Promise.resolve(null);
         autoDetectStatus = 'Checking Torn for Xanax OD...';
         saveSession();
         return getTornOdFeed(memberApiKey).then(function (data) {
@@ -1697,6 +1805,12 @@
 #si-7ds-overlay .si-7ds-btn.alt {
   background: linear-gradient(180deg, rgba(60, 12, 16, .92), rgba(24, 7, 10, .96)) !important;
 }
+#si-7ds-overlay .si-7ds-btn.armed {
+  background: linear-gradient(180deg, rgba(26, 122, 55, .96), rgba(14, 78, 34, .98)) !important;
+  border: 1px solid rgba(95,226,130,.55) !important;
+  color: #ecfff1 !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.04) inset, 0 0 16px rgba(62,196,100,.22) !important;
+}
 #si-7ds-overlay .si-7ds-auth-box {
   border-radius: 14px !important;
   border: 1px solid rgba(201,162,80,.18) !important;
@@ -1922,12 +2036,12 @@
                 +   '<div class="si-7ds-plan-grid">'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">6 Xanax</div></div>'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">2 Xanax</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">20 mins</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">30 mins</div></div>'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">Any energy start</div></div>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Pride Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="arm-plan" data-plan="Pride Sin">Arm</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Pride Sin') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Pride Sin">' + (isPlanArmedActive('Pride Sin') ? 'Pride Active' : 'Activate Pride') + '</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Pride Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
@@ -1939,13 +2053,16 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-grid">'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">2 per stage</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">1 hour / stage</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">30 mins / stage</div></div>'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">5 / 10 / 15 / 20</div></div>'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">Start with 0 energy</div></div>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Wrath Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="arm-plan" data-plan="Wrath Sin">Arm</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Wrath Sin', '1') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Wrath Sin" data-stage="1">Stage 1 Arm (5x)</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Wrath Sin', '2') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Wrath Sin" data-stage="2">Stage 2 Arm (10x)</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Wrath Sin', '3') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Wrath Sin" data-stage="3">Stage 3 Arm (15x)</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Wrath Sin', '4') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Wrath Sin" data-stage="4">Stage 4 Arm (20x)</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Wrath Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
@@ -1957,11 +2074,13 @@
                 +   '</div>'
                 +   '<div class="si-7ds-plan-grid">'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Rule</div><div class="si-7ds-plan-stat-value">Happy jump</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Premium payout</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Premium payout</div></div>
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">30 mins</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">Arm tracked</div></div>''
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="arm-plan" data-plan="Envy Sin">Arm</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Envy Sin') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Envy Sin">' + (isPlanArmedActive('Envy Sin') ? 'Envy Active' : 'Activate Envy') + '</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Envy Sin">Terms</button>'
                 +   '</div>'
                 + '</div>'
@@ -1970,13 +2089,19 @@
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Plan Arm Status</div>'
                 +   '<div class="si-7ds-summary-grid">'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationPlan || selectedPlan || 'None') + '</div><div class="si-7ds-summary-label">Armed plan</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(getArmedPlanDisplayName()) + '</div><div class="si-7ds-summary-label">Armed plan</div></div>'
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationAt || '—') + '</div><div class="si-7ds-summary-label">Armed at</div></div>'
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationExpiresAt || '—') + '</div><div class="si-7ds-summary-label">Expires</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationStage || '—') + '</div><div class="si-7ds-summary-label">Wrath stage</div></div>'
                 +   '</div>'
+                +   '<div class="si-7ds-text"><strong>Window remaining:</strong> <span id="si-7ds-armed-countdown">' + esc(isPlanArmedActive() ? formatDurationMs(getArmedCountdownMs()) : 'Expired') + '</span></div>'
                 +   '<div class="si-7ds-text"><strong>Energy at arm:</strong> ' + esc(planActivationEnergy || '—') + '</div>'
                 +   '<div class="si-7ds-text"><strong>Booster CD at arm:</strong> ' + esc(planActivationBoosterCd || '—') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Required payment:</strong> ' + esc(getArmedPaymentDisplay()) + '</div>'
                 +   '<div class="si-7ds-text"><strong>Auto detect:</strong> ' + esc(autoDetectStatus || 'Idle') + (autoOdDetectedAt ? ' | Last hit: ' + esc(autoOdDetectedAt) : '') + '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="stop-armed-plan">Stop Plan</button>'
+                +   '</div>'
                 + '</div>';
         }
 
@@ -2318,7 +2443,17 @@
             btn.addEventListener('click', function () {
                 selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
                 saveSession();
-                armPlanSnapshot(selectedPlan);
+                armPlanSnapshot(selectedPlan, btn.getAttribute('data-stage') || '');
+            });
+        });
+
+        overlay.querySelectorAll('[data-action="stop-armed-plan"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var stoppedPlan = getArmedPlanDisplayName() || planActivationPlan || selectedPlan || 'plan';
+                clearArmedPlanState('Plan stopped manually', false);
+                addClaimHistoryEntry((sessionName || 'Member') + ' stopped the armed window for ' + stoppedPlan + '.');
             });
         });
 
@@ -2487,6 +2622,7 @@
     }
 
     function renderOverlay() {
+        refreshArmedPlanState();
         if (!overlay) return;
         overlay.innerHTML = ''
             + '<div class="si-7ds-head">'
@@ -2562,302 +2698,12 @@
         }, 45000);
     }
 
-
-    var requiredPaymentItem = (typeof GM_getValue === 'function' ? GM_getValue('si_required_payment_item', '') : '');
-    var requiredPaymentQty = (typeof GM_getValue === 'function' ? GM_getValue('si_required_payment_qty', '') : '');
-    var memberPaymentVerified = (typeof GM_getValue === 'function' ? GM_getValue('si_member_payment_verified', 0) : 0);
-    var memberPaymentVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_member_payment_verified_at', '') : '');
-    var memberPaymentProof = (typeof GM_getValue === 'function' ? GM_getValue('si_member_payment_proof', '') : '');
-    var adminReceiptVerified = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified', 0) : 0);
-    var adminReceiptVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified_at', '') : '');
-    var adminReceiptProof = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_proof', '') : '');
-    var adminPayoutVerified = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified', 0) : 0);
-    var adminPayoutVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified_at', '') : '');
-    var adminPayoutProof = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_proof', '') : '');
-
-    syncSecret = syncSecret || '6282';
-    factionIdLock = factionIdLock || '49384';
-
-    function getRequiredPaymentSpec(plan, stackText) {
-        var p = String(plan || '').trim();
-        var s = String(stackText || '').toLowerCase();
-        if (p === 'Pride Sin') return { item: 'Xanax', qty: '2' };
-        if (p === 'Wrath Sin') {
-            if (s.indexOf('4th') >= 0 || s.indexOf('fourth') >= 0) return { item: 'Xanax', qty: '20' };
-            if (s.indexOf('3rd') >= 0 || s.indexOf('third') >= 0) return { item: 'Xanax', qty: '15' };
-            if (s.indexOf('2nd') >= 0 || s.indexOf('second') >= 0) return { item: 'Xanax', qty: '10' };
-            return { item: 'Xanax', qty: '5' };
-        }
-        if (p === 'Envy Sin') return { item: 'Manual', qty: '' };
-        return { item: '', qty: '' };
-    }
-
-    function paymentFlagLabel(flag, at) {
-        return Number(flag) ? ('Verified' + (at ? ' @ ' + at : '')) : 'Pending';
-    }
-
-    function autoFillRequiredPayment() {
-        var spec = getRequiredPaymentSpec(selectedPlan, claimStack);
-        requiredPaymentItem = spec.item || '';
-        requiredPaymentQty = spec.qty || '';
-        upsertCurrentClaimRecord();
-        saveSession();
-        renderOverlay();
-    }
-
-    function markPaymentState(kind) {
-        if (!isAdmin()) { window.alert('Admin login required.'); return; }
-        var now = new Date().toLocaleString();
-        if (kind === 'member') {
-            memberPaymentVerified = 1;
-            memberPaymentVerifiedAt = now;
-            if (!requiredPaymentItem && !requiredPaymentQty) autoFillRequiredPayment();
-        }
-        if (kind === 'receipt') {
-            adminReceiptVerified = 1;
-            adminReceiptVerifiedAt = now;
-        }
-        if (kind === 'payout') {
-            adminPayoutVerified = 1;
-            adminPayoutVerifiedAt = now;
-        }
-        addClaimHistoryEntry((sessionName || 'Admin') + ' verified ' + kind + ' payment state for claim ' + (claimId || 'unassigned') + '.');
-        upsertCurrentClaimRecord();
-        saveSession();
-        pushCurrentClaimToBackend();
-        renderOverlay();
-    }
-
-    function clearPaymentState(kind) {
-        if (!isAdmin()) { window.alert('Admin login required.'); return; }
-        if (kind === 'member') { memberPaymentVerified = 0; memberPaymentVerifiedAt = ''; }
-        if (kind === 'receipt') { adminReceiptVerified = 0; adminReceiptVerifiedAt = ''; }
-        if (kind === 'payout') { adminPayoutVerified = 0; adminPayoutVerifiedAt = ''; }
-        addClaimHistoryEntry((sessionName || 'Admin') + ' cleared ' + kind + ' payment state for claim ' + (claimId || 'unassigned') + '.');
-        upsertCurrentClaimRecord();
-        saveSession();
-        pushCurrentClaimToBackend();
-        renderOverlay();
-    }
-
-    var _origSaveSession = saveSession;
-    saveSession = function () {
-        _origSaveSession();
-        if (typeof GM_setValue === 'function') {
-            GM_setValue('si_required_payment_item', requiredPaymentItem || '');
-            GM_setValue('si_required_payment_qty', requiredPaymentQty || '');
-            GM_setValue('si_member_payment_verified', Number(memberPaymentVerified) ? 1 : 0);
-            GM_setValue('si_member_payment_verified_at', memberPaymentVerifiedAt || '');
-            GM_setValue('si_member_payment_proof', memberPaymentProof || '');
-            GM_setValue('si_admin_receipt_verified', Number(adminReceiptVerified) ? 1 : 0);
-            GM_setValue('si_admin_receipt_verified_at', adminReceiptVerifiedAt || '');
-            GM_setValue('si_admin_receipt_proof', adminReceiptProof || '');
-            GM_setValue('si_admin_payout_verified', Number(adminPayoutVerified) ? 1 : 0);
-            GM_setValue('si_admin_payout_verified_at', adminPayoutVerifiedAt || '');
-            GM_setValue('si_admin_payout_proof', adminPayoutProof || '');
-            GM_setValue('si_sync_secret', syncSecret || '6282');
-            GM_setValue('si_faction_id_lock', factionIdLock || '49384');
-        }
-    };
-
-    var _origSyncCurrent = syncCurrentFromSelectedClaim;
-    syncCurrentFromSelectedClaim = function () {
-        _origSyncCurrent();
-        var rec = getSelectedClaimRecord();
-        if (!rec) return;
-        requiredPaymentItem = rec.requiredPaymentItem || requiredPaymentItem || '';
-        requiredPaymentQty = rec.requiredPaymentQty || requiredPaymentQty || '';
-        memberPaymentVerified = Number(rec.memberPaymentVerified) ? 1 : 0;
-        memberPaymentVerifiedAt = rec.memberPaymentVerifiedAt || '';
-        memberPaymentProof = rec.memberPaymentProof || '';
-        adminReceiptVerified = Number(rec.adminReceiptVerified) ? 1 : 0;
-        adminReceiptVerifiedAt = rec.adminReceiptVerifiedAt || '';
-        adminReceiptProof = rec.adminReceiptProof || '';
-        adminPayoutVerified = Number(rec.adminPayoutVerified) ? 1 : 0;
-        adminPayoutVerifiedAt = rec.adminPayoutVerifiedAt || '';
-        adminPayoutProof = rec.adminPayoutProof || '';
-    };
-
-    var _origUpdateClaimField = updateClaimField;
-    updateClaimField = function (field, value) {
-        if (field === 'requiredPaymentItem') requiredPaymentItem = value || '';
-        else if (field === 'requiredPaymentQty') requiredPaymentQty = value || '';
-        else if (field === 'memberPaymentProof') memberPaymentProof = value || '';
-        else if (field === 'adminReceiptProof') adminReceiptProof = value || '';
-        else if (field === 'adminPayoutProof') adminPayoutProof = value || '';
-        else return _origUpdateClaimField(field, value);
-        upsertCurrentClaimRecord();
-        saveSession();
-    };
-
-    var _origUpsert = upsertCurrentClaimRecord;
-    upsertCurrentClaimRecord = function () {
-        _origUpsert();
-        if (!claimId) return;
-        var items = getClaimsDbItems();
-        var idx = items.findIndex(function (item) { return item && item.id === claimId; });
-        if (idx < 0) return;
-        items[idx].requiredPaymentItem = requiredPaymentItem || '';
-        items[idx].requiredPaymentQty = requiredPaymentQty || '';
-        items[idx].memberPaymentVerified = Number(memberPaymentVerified) ? 1 : 0;
-        items[idx].memberPaymentVerifiedAt = memberPaymentVerifiedAt || '';
-        items[idx].memberPaymentProof = memberPaymentProof || '';
-        items[idx].adminReceiptVerified = Number(adminReceiptVerified) ? 1 : 0;
-        items[idx].adminReceiptVerifiedAt = adminReceiptVerifiedAt || '';
-        items[idx].adminReceiptProof = adminReceiptProof || '';
-        items[idx].adminPayoutVerified = Number(adminPayoutVerified) ? 1 : 0;
-        items[idx].adminPayoutVerifiedAt = adminPayoutVerifiedAt || '';
-        items[idx].adminPayoutProof = adminPayoutProof || '';
-        saveClaimsDbItems(items.slice(0, 25));
-    };
-
-    pushCurrentClaimToBackend = function () {
-        if (!claimId) return Promise.resolve(null);
-        var action = isAdmin() ? 'admin_update' : (isMember() ? 'member_submit' : 'guest');
-        var payload = {
-            secret: syncSecret,
-            action: action,
-            auth: buildServerAuthPayload(),
-            claim: {
-                id: claimId || '',
-                plan: selectedPlan || 'None',
-                status: claimStatus || 'Not submitted',
-                note: claimNote || '',
-                loss: claimLoss || '',
-                proof: claimProof || '',
-                stack: claimStack || '',
-                payout: payoutAmount || '',
-                decision: decisionNote || '',
-                requiredPaymentItem: requiredPaymentItem || '',
-                requiredPaymentQty: requiredPaymentQty || '',
-                memberPaymentVerified: Number(memberPaymentVerified) ? 1 : 0,
-                memberPaymentVerifiedAt: memberPaymentVerifiedAt || '',
-                memberPaymentProof: memberPaymentProof || '',
-                adminReceiptVerified: Number(adminReceiptVerified) ? 1 : 0,
-                adminReceiptVerifiedAt: adminReceiptVerifiedAt || '',
-                adminReceiptProof: adminReceiptProof || '',
-                adminPayoutVerified: Number(adminPayoutVerified) ? 1 : 0,
-                adminPayoutVerifiedAt: adminPayoutVerifiedAt || '',
-                adminPayoutProof: adminPayoutProof || '',
-                member: sessionName || 'Guest',
-                updatedAt: new Date().toLocaleString(),
-                armedAt: planActivationAt || '',
-                armedPlan: planActivationPlan || '',
-                armedEnergy: planActivationEnergy || '',
-                armedBoosterCd: planActivationBoosterCd || ''
-            }
-        };
-        return apiRequest('POST', '/api/claims/push', payload).then(function (data) {
-            backendStatus = data && data.ok ? 'Claim pushed' : ((data && data.error) ? data.error : 'Push failed');
-            lastSyncAt = new Date().toLocaleString();
-            if (data && data.claim) {
-                claimStatus = data.claim.status || claimStatus;
-                payoutAmount = data.claim.payout || payoutAmount;
-                decisionNote = data.claim.decision || decisionNote;
-                selectedPlan = data.claim.plan || selectedPlan;
-                claimNote = data.claim.note || claimNote;
-                claimLoss = data.claim.loss || claimLoss;
-                claimProof = data.claim.proof || claimProof;
-                claimStack = data.claim.stack || claimStack;
-                requiredPaymentItem = data.claim.requiredPaymentItem || requiredPaymentItem;
-                requiredPaymentQty = data.claim.requiredPaymentQty || requiredPaymentQty;
-                memberPaymentVerified = Number(data.claim.memberPaymentVerified) ? 1 : 0;
-                memberPaymentVerifiedAt = data.claim.memberPaymentVerifiedAt || memberPaymentVerifiedAt;
-                memberPaymentProof = data.claim.memberPaymentProof || memberPaymentProof;
-                adminReceiptVerified = Number(data.claim.adminReceiptVerified) ? 1 : 0;
-                adminReceiptVerifiedAt = data.claim.adminReceiptVerifiedAt || adminReceiptVerifiedAt;
-                adminReceiptProof = data.claim.adminReceiptProof || adminReceiptProof;
-                adminPayoutVerified = Number(data.claim.adminPayoutVerified) ? 1 : 0;
-                adminPayoutVerifiedAt = data.claim.adminPayoutVerifiedAt || adminPayoutVerifiedAt;
-                adminPayoutProof = data.claim.adminPayoutProof || adminPayoutProof;
-                upsertCurrentClaimRecord();
-            }
-            saveSession();
-            renderOverlay();
-            return data;
-        }).catch(function () {
-            backendStatus = 'Push failed';
-            lastSyncAt = new Date().toLocaleString();
-            saveSession();
-            renderOverlay();
-            return null;
-        });
-    };
-
-    var _origRenderTabContent = renderTabContent;
-    renderTabContent = function () {
-        var html = _origRenderTabContent();
-        if (activeTab === 'claims') {
-            html = html.replace('<div class="si-7ds-text"><strong>Rule:</strong> ' + esc(getPlanRuleText(selectedPlan)) + '</div>',
-                '<div class="si-7ds-text"><strong>Rule:</strong> ' + esc(getPlanRuleText(selectedPlan)) + '</div>'
-                + '<div class="si-7ds-text"><strong>Required payment:</strong> ' + esc((requiredPaymentQty ? requiredPaymentQty + ' ' : '') + (requiredPaymentItem || 'Not set')) + '</div>');
-
-            if (isMember() && !isAdmin()) {
-                html = html.replace('</textarea></div></div><div class="si-7ds-plan-actions">' + memberActions + '</div></div>',
-                    '</textarea></div>'
-                    + '<div class="si-7ds-field"><label class="si-7ds-label" for="si-member-payment-proof">Payment / transfer proof</label><textarea id="si-member-payment-proof" class="si-7ds-textarea" placeholder="Note what you sent to admin for plan payment">' + esc(memberPaymentProof) + '</textarea></div>'
-                    + '<div class="si-7ds-note-box"><div class="si-7ds-text"><strong>Required payment:</strong> ' + esc((requiredPaymentQty ? requiredPaymentQty + ' ' : '') + (requiredPaymentItem || 'Will be set by admin')) + '</div></div>'
-                    + '</div><div class="si-7ds-plan-actions">' + memberActions + '</div></div>');
-            }
-
-            if (isAdmin()) {
-                var paymentCard = ''
-                    + '<div class="si-7ds-card">'
-                    +   '<div class="si-7ds-card-title">Payment Verification</div>'
-                    +   '<div class="si-7ds-form-grid">'
-                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-required-payment-item">Required member payment item</label><input id="si-required-payment-item" class="si-7ds-input" type="text" value="' + esc(requiredPaymentItem) + '" placeholder="Xanax"></div>'
-                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-required-payment-qty">Required member payment qty</label><input id="si-required-payment-qty" class="si-7ds-input" type="text" value="' + esc(requiredPaymentQty) + '" placeholder="2"></div>'
-                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-member-payment-proof">Member paid in proof</label><textarea id="si-member-payment-proof" class="si-7ds-textarea" placeholder="What was sent to admin?">' + esc(memberPaymentProof) + '</textarea></div>'
-                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-admin-receipt-proof">Payment received proof</label><textarea id="si-admin-receipt-proof" class="si-7ds-textarea" placeholder="Payment received note">' + esc(adminReceiptProof) + '</textarea></div>'
-                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-admin-payout-proof">Payout sent proof</label><textarea id="si-admin-payout-proof" class="si-7ds-textarea" placeholder="Payout sent note">' + esc(adminPayoutProof) + '</textarea></div>'
-                    +   '</div>'
-                    +   '<div class="si-7ds-pillrow">'
-                    +     '<span class="si-7ds-pill">Member paid in: ' + esc(paymentFlagLabel(memberPaymentVerified, memberPaymentVerifiedAt)) + '</span>'
-                    +     '<span class="si-7ds-pill">Payment received: ' + esc(paymentFlagLabel(adminReceiptVerified, adminReceiptVerifiedAt)) + '</span>'
-                    +     '<span class="si-7ds-pill">Payout sent: ' + esc(paymentFlagLabel(adminPayoutVerified, adminPayoutVerifiedAt)) + '</span>'
-                    +   '</div>'
-                    +   '<div class="si-7ds-admin-actions-grid">'
-                    +     '<button type="button" class="si-7ds-btn alt" data-action="auto-required-payment">Auto Fill Required</button>'
-                    +     '<button type="button" class="si-7ds-btn alt" data-action="verify-member-payment">Mark Member Paid In</button>'
-                    +     '<button type="button" class="si-7ds-btn alt" data-action="verify-admin-receipt">Mark Received</button>'
-                    +     '<button type="button" class="si-7ds-btn confirm" data-action="verify-admin-payout">Mark Payout Sent</button>'
-                    +   '</div>'
-                    +   '<div class="si-7ds-admin-actions-grid">'
-                    +     '<button type="button" class="si-7ds-btn alt" data-action="clear-member-payment">Clear Member</button>'
-                    +     '<button type="button" class="si-7ds-btn alt" data-action="clear-admin-receipt">Clear Received</button>'
-                    +     '<button type="button" class="si-7ds-btn alt" data-action="clear-admin-payout">Clear Payout Sent</button>'
-                    +   '</div>'
-                    + '</div>';
-                html = html.replace('<div class="si-7ds-card"><div class="si-7ds-card-title">History</div>', paymentCard + '<div class="si-7ds-card"><div class="si-7ds-card-title">History</div>');
-            }
-        }
-        return html;
-    };
-
-    var _origBindOverlayEvents = bindOverlayEvents;
-    bindOverlayEvents = function () {
-        _origBindOverlayEvents();
-        if (!overlay) return;
-        [['si-required-payment-item','requiredPaymentItem'],['si-required-payment-qty','requiredPaymentQty'],['si-member-payment-proof','memberPaymentProof'],['si-admin-receipt-proof','adminReceiptProof'],['si-admin-payout-proof','adminPayoutProof']].forEach(function (pair) {
-            var el = overlay.querySelector('#' + pair[0]);
-            if (!el || el.dataset.paymentBound) return;
-            el.dataset.paymentBound = '1';
-            el.addEventListener('input', function () { updateClaimField(pair[1], el.value); });
-        });
-        [['auto-required-payment', function(){ autoFillRequiredPayment(); }], ['verify-member-payment', function(){ markPaymentState('member'); }], ['verify-admin-receipt', function(){ markPaymentState('receipt'); }], ['verify-admin-payout', function(){ markPaymentState('payout'); }], ['clear-member-payment', function(){ clearPaymentState('member'); }], ['clear-admin-receipt', function(){ clearPaymentState('receipt'); }], ['clear-admin-payout', function(){ clearPaymentState('payout'); }]].forEach(function (item) {
-            overlay.querySelectorAll('[data-action="' + item[0] + '"]').forEach(function (btn) {
-                if (btn.dataset.paymentBound) return;
-                btn.dataset.paymentBound = '1';
-                btn.addEventListener('click', item[1]);
-            });
-        });
-    };
-
     function boot() {
         syncCurrentFromSelectedClaim();
         mount();
         fetchSelectedClaimHistory();
         startRemountWatch();
+        startArmedCountdownWatch();
         startAdminClaimNotifications();
         startMemberAutoDetection();
     }
