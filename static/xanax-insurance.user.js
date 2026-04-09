@@ -3219,4 +3219,893 @@
     } else {
         boot();
     }
+    // ---- v2.8.8 payment + stage verification extension ----
+    var wrathSelectedStage = (typeof GM_getValue === 'function' ? GM_getValue('si_wrath_stage_ext', '') : '');
+    var paymentRequiredText = (typeof GM_getValue === 'function' ? GM_getValue('si_payment_required_text_ext', '') : '');
+    var paymentVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_payment_verified_at_ext', '') : '');
+    var paymentVerifiedText = (typeof GM_getValue === 'function' ? GM_getValue('si_payment_verified_text_ext', '') : '');
+    var paymentVerificationStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_payment_verification_status_ext', 'Not armed') : 'Not armed');
+    var paymentFingerprint = (typeof GM_getValue === 'function' ? GM_getValue('si_payment_fingerprint_ext', '') : '');
+
+    var _saveSessionBase = saveSession;
+    saveSession = function () {
+        _saveSessionBase();
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_wrath_stage_ext', wrathSelectedStage || '');
+            GM_setValue('si_payment_required_text_ext', paymentRequiredText || '');
+            GM_setValue('si_payment_verified_at_ext', paymentVerifiedAt || '');
+            GM_setValue('si_payment_verified_text_ext', paymentVerifiedText || '');
+            GM_setValue('si_payment_verification_status_ext', paymentVerificationStatus || 'Not armed');
+            GM_setValue('si_payment_fingerprint_ext', paymentFingerprint || '');
+        }
+    };
+
+    function getWrathStageRequirement(stage) {
+        var s = String(stage || wrathSelectedStage || '').toLowerCase().trim();
+        if (s === 'stage 1' || s === '1' || s === '1st' || s === 'first') return { key: 'stage 1', label: 'Stage 1', energy: 0, stack: '1st', coverage: '5 Xanax' };
+        if (s === 'stage 2' || s === '2' || s === '2nd' || s === 'second') return { key: 'stage 2', label: 'Stage 2', energy: 250, stack: '2nd', coverage: '10 Xanax' };
+        if (s === 'stage 3' || s === '3' || s === '3rd' || s === 'third') return { key: 'stage 3', label: 'Stage 3', energy: 500, stack: '3rd', coverage: '15 Xanax' };
+        if (s === 'stage 4' || s === '4' || s === '4th' || s === 'fourth') return { key: 'stage 4', label: 'Stage 4', energy: 750, stack: '4th', coverage: '20 Xanax' };
+        return null;
+    }
+
+    function getWrathStageDisplay(stage) {
+        var cfg = getWrathStageRequirement(stage);
+        return cfg ? (cfg.label + ' • start ' + cfg.energy + ' energy • coverage ' + cfg.coverage) : 'Not selected';
+    }
+
+    function getPlanPaymentRequirement(plan) {
+        var p = String(plan || selectedPlan || '');
+        if (p === 'Pride Sin') return { text: '2 Xanax', qty: 2, item: 'xanax' };
+        if (p === 'Wrath Sin') return { text: '2 Xanax', qty: 2, item: 'xanax' };
+        if (p === 'Envy Sin') return { text: '5 Xanax', qty: 5, item: 'xanax' };
+        return { text: '', qty: 0, item: '' };
+    }
+
+    function extHasKeyword(text, list) {
+        var raw = String(text || '').toLowerCase();
+        return (list || []).some(function (word) { return raw.indexOf(String(word || '').toLowerCase()) >= 0; });
+    }
+
+    function detectLatestPlanPayment(entries, plan, armedAtMs) {
+        var requirement = getPlanPaymentRequirement(plan);
+        if (!requirement.qty || !requirement.item) return null;
+        var hints = (ADMIN_USER_IDS || []).concat(['fries91']);
+        var matches = (entries || []).filter(function (entry) {
+            var ts = (entry && entry.timestamp ? entry.timestamp * 1000 : 0);
+            if (armedAtMs && ts && ts < armedAtMs) return false;
+            var text = String(entry && entry.text || '').toLowerCase();
+            if (!text) return false;
+            var hasAction = extHasKeyword(text, [' sent ', ' send ', ' gave ', ' transfer', ' traded ', ' trade ', ' mail']);
+            var hasItem = text.indexOf(requirement.item) >= 0;
+            var hasQty = text.indexOf(String(requirement.qty)) >= 0 || (requirement.qty === 2 && (text.indexOf('two') >= 0 || text.indexOf('pair') >= 0));
+            var hasWho = extHasKeyword(text, hints);
+            return hasAction && hasItem && hasQty && hasWho;
+        }).sort(function (a, b) { return (b.timestamp || 0) - (a.timestamp || 0); });
+        return matches.length ? matches[0] : null;
+    }
+
+    var _getPlanRuleTextBase = getPlanRuleText;
+    getPlanRuleText = function (plan) {
+        var p = String(plan || '');
+        if (p === 'Wrath Sin') {
+            var cfg = getWrathStageRequirement(wrathSelectedStage);
+            return cfg ? (cfg.label + ' must arm at ' + cfg.energy + ' energy') : 'choose a Wrath stage first';
+        }
+        if (p === 'Envy Sin') return 'must arm at 1000 energy with 0 booster cooldown';
+        return _getPlanRuleTextBase(plan);
+    };
+
+    getPlanRuleState = function (plan) {
+        var p = String(plan || selectedPlan || '');
+        if (!p || p === 'None') return { ok: false, code: 'no-plan', text: 'No plan selected' };
+        if (!planActivationAt || !planActivationPlan || planActivationPlan !== p) return { ok: false, code: 'not-armed', text: 'Plan not armed yet' };
+        var expiryMs = getPlanExpiryMs(p, planActivationAt);
+        if (!expiryMs || Date.now() > expiryMs) return { ok: false, code: 'expired', text: 'Armed window expired' };
+        var energyCurrent = parseEnergyCurrent(planActivationEnergy);
+        var boosterSecs = cooldownSecondsFromAny(planActivationBoosterCd);
+        if (p === 'Wrath Sin') {
+            var wrathCfg = getWrathStageRequirement(wrathSelectedStage);
+            if (!wrathCfg) return { ok: false, code: 'wrath-stage', text: 'Choose a Wrath stage before arming' };
+            if (energyCurrent !== wrathCfg.energy) return { ok: false, code: 'wrath-energy', text: wrathCfg.label + ' needs ' + wrathCfg.energy + ' energy at arm time' };
+            return { ok: true, code: 'ok', text: 'Wrath ' + wrathCfg.label + ' armed - ' + wrathCfg.energy + ' energy start confirmed' };
+        }
+        if (p === 'Envy Sin') {
+            if (energyCurrent !== 1000) return { ok: false, code: 'envy-energy', text: 'Envy needs 1000 energy at arm time' };
+            if (boosterSecs > 0) return { ok: false, code: 'envy-cd', text: 'Envy needs 0 booster cooldown at arm time' };
+            return { ok: true, code: 'ok', text: 'Envy armed - 1000 energy and 0 booster cooldown confirmed' };
+        }
+        return _getPlanRuleTextBase(p) ? { ok: true, code: 'ok', text: _getPlanRuleTextBase(p) } : { ok: true, code: 'ok', text: p + ' armed and valid' };
+    };
+
+    var _armPlanSnapshotBase = armPlanSnapshot;
+    armPlanSnapshot = function (plan) {
+        paymentRequiredText = getPlanPaymentRequirement(plan || selectedPlan).text || '';
+        paymentVerifiedAt = '';
+        paymentVerifiedText = '';
+        paymentFingerprint = '';
+        paymentVerificationStatus = paymentRequiredText ? ('Waiting for payment to admin: ' + paymentRequiredText) : 'No payment rule';
+        return _armPlanSnapshotBase(plan).then(function (data) {
+            saveSession();
+            return data;
+        });
+    };
+
+    function armWrathStage(stage) {
+        var cfg = getWrathStageRequirement(stage);
+        if (!cfg) return Promise.resolve(null);
+        wrathSelectedStage = cfg.label;
+        selectedPlan = 'Wrath Sin';
+        claimStack = cfg.stack;
+        claimLoss = cfg.energy + ' energy lost';
+        autoDetectStatus = 'Arming Wrath ' + cfg.label + '...';
+        return armPlanSnapshot('Wrath Sin');
+    }
+
+    applyDetectedXanaxOverdose = function (entry) {
+        if (!entry) return Promise.resolve(null);
+        var fingerprint = String((entry.id || '') + '|' + (entry.timestamp || '') + '|' + String(entry.text || '').slice(0, 120));
+        if (fingerprint && fingerprint === autoOdFingerprint) {
+            autoDetectStatus = 'Watching for next Xanax OD';
+            saveSession();
+            return Promise.resolve(null);
+        }
+        autoOdFingerprint = fingerprint;
+        autoOdDetectedAt = new Date().toLocaleString();
+
+        if (!selectedPlan || selectedPlan === 'None' || selectedPlan === 'Envy Sin') {
+            claimStatus = 'Detected - plan needed';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose. Select Pride or Wrath and arm the plan first.';
+            claimStack = '';
+            autoDetectStatus = 'OD found - select plan';
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+        if (!planActivationAt || !planActivationPlan || planActivationPlan !== selectedPlan) {
+            autoDetectStatus = 'OD found - plan was not armed';
+            claimStatus = 'Detected - plan not armed';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose, but the selected plan was not armed before the OD.';
+            claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+        var ruleState = getPlanRuleState(selectedPlan);
+        if (!ruleState.ok) {
+            autoDetectStatus = 'OD found - rule check failed';
+            claimStatus = 'Detected - rules failed';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose, but plan verification failed: ' + ruleState.text + '.';
+            claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+        if (!paymentVerifiedAt) {
+            autoDetectStatus = 'OD found - payment to admin not verified';
+            claimStatus = 'Detected - payment missing';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose, but required payment to admin was not verified after plan activation.';
+            claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+        var armedAtMs = parseIsoOrLocalTimestamp(planActivationAt);
+        var odAtMs = (entry.timestamp || 0) * 1000;
+        var windowMs = getPlanWindowMinutes(selectedPlan) * 60 * 1000;
+        if (!armedAtMs || !windowMs || odAtMs < armedAtMs || odAtMs > (armedAtMs + windowMs)) {
+            autoDetectStatus = 'OD found - outside ' + getPlanWindowLabel(selectedPlan) + ' window';
+            claimStatus = 'Detected - outside window';
+            claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+            claimProof = buildAutoProofNote(entry);
+            claimNote = 'Auto-detected Xanax overdose was outside the armed ' + getPlanWindowLabel(selectedPlan) + ' window.';
+            claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+            saveSession();
+            renderOverlay();
+            return Promise.resolve(null);
+        }
+        claimId = makeClaimId();
+        selectedClaimId = claimId;
+        claimStatus = 'Pending review';
+        claimStack = getAutoStackFromOd(selectedPlan, entry.text);
+        claimLoss = getAutoLossFromOd(selectedPlan, entry.text);
+        claimProof = buildAutoProofNote(entry) + ' | Armed ' + planActivationAt + ' | Energy ' + (planActivationEnergy || 'unknown') + ' | Booster CD ' + (planActivationBoosterCd || 'unknown') + ' | Payment verified ' + paymentVerifiedAt + (paymentVerifiedText ? ' | ' + paymentVerifiedText : '') + ' | Terms verified: ' + ruleState.text;
+        claimNote = 'Auto-detected via Torn API within ' + getPlanWindowLabel(selectedPlan) + ': ' + String(entry.text || '').replace(/\s+/g, ' ').slice(0, 180) + ' | Armed plan ' + selectedPlan + (selectedPlan === 'Wrath Sin' && wrathSelectedStage ? (' ' + wrathSelectedStage) : '') + ' at ' + planActivationAt + '. Payment verified at ' + paymentVerifiedAt + '. Terms check: ' + ruleState.text + '.';
+        addClaimHistoryEntry((sessionName || 'Member') + ' had a Xanax overdose auto-detected within the ' + getPlanWindowLabel(selectedPlan) + ' window for ' + selectedPlan + ', payment was verified, and claim ' + claimId + ' was created automatically.');
+        upsertCurrentClaimRecord();
+        autoDetectStatus = 'OD detected in window and claim queued';
+        saveSession();
+        renderOverlay();
+        if (apiBase && syncSecret) {
+            return syncClaimToBackend().then(function () {
+                autoDetectStatus = 'OD detected in window and claim synced';
+                saveSession();
+                renderOverlay();
+                return true;
+            }).catch(function () {
+                autoDetectStatus = 'OD detected in window - sync pending';
+                saveSession();
+                renderOverlay();
+                return null;
+            });
+        }
+        return Promise.resolve(null);
+    };
+
+    runMemberAutoDetection = function () {
+        if (!isMember() || !memberApiKey) return Promise.resolve(null);
+        autoDetectStatus = 'Checking Torn for payment + Xanax OD...';
+        saveSession();
+        return getTornOdFeed(memberApiKey).then(function (data) {
+            if (data && data.error) {
+                autoDetectStatus = 'OD check failed: ' + String((data.error && data.error.error) || 'API error');
+                saveSession();
+                renderOverlay();
+                return null;
+            }
+            var entries = collectActivityEntries(data || {});
+            if (planActivationAt && planActivationPlan && !paymentVerifiedAt) {
+                var armedAtMs = parseIsoOrLocalTimestamp(planActivationAt);
+                var paymentHit = detectLatestPlanPayment(entries, planActivationPlan, armedAtMs);
+                if (paymentHit) {
+                    var paymentFp = String((paymentHit.id || '') + '|' + (paymentHit.timestamp || '') + '|' + String(paymentHit.text || '').slice(0, 140));
+                    if (paymentFp !== paymentFingerprint) {
+                        paymentFingerprint = paymentFp;
+                        paymentVerifiedAt = paymentHit.timestamp ? new Date(paymentHit.timestamp * 1000).toLocaleString() : new Date().toLocaleString();
+                        paymentVerifiedText = 'Matched ' + (paymentRequiredText || getPlanPaymentRequirement(planActivationPlan).text || 'required payment') + ' to admin from Torn log';
+                        paymentVerificationStatus = 'Verified at ' + paymentVerifiedAt;
+                        addClaimHistoryEntry((sessionName || 'Member') + ' payment verified for ' + (planActivationPlan || 'plan') + ' at ' + paymentVerifiedAt + '.');
+                    }
+                } else if (paymentRequiredText) {
+                    paymentVerificationStatus = 'Waiting for payment to admin: ' + paymentRequiredText;
+                }
+            }
+            var latest = detectLatestXanaxOverdose(entries);
+            if (!latest) {
+                autoDetectStatus = paymentVerifiedAt ? 'Payment verified - watching for next Xanax OD' : 'Watching for payment and next Xanax OD';
+                saveSession();
+                renderOverlay();
+                return null;
+            }
+            return applyDetectedXanaxOverdose(latest);
+        }).catch(function () {
+            autoDetectStatus = 'OD check failed';
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    };
+
+    var _upsertCurrentClaimRecordBase = upsertCurrentClaimRecord;
+    upsertCurrentClaimRecord = function () {
+        _upsertCurrentClaimRecordBase();
+        if (!claimId) return;
+        var items = getClaimsDbItems();
+        var idx = items.findIndex(function (item) { return item && item.id === claimId; });
+        if (idx < 0) return;
+        items[idx].armedAt = planActivationAt || '';
+        items[idx].armedPlan = (planActivationPlan || '') + (planActivationPlan === 'Wrath Sin' && wrathSelectedStage ? (' - ' + wrathSelectedStage) : '');
+        items[idx].armedEnergy = planActivationEnergy || '';
+        items[idx].armedBoosterCd = planActivationBoosterCd || '';
+        items[idx].expiresAt = planActivationExpiresAt || '';
+        items[idx].paymentRequired = paymentRequiredText || '';
+        items[idx].paymentVerifiedAt = paymentVerifiedAt || '';
+        items[idx].paymentVerifiedText = paymentVerifiedText || '';
+        items[idx].ruleCheck = (getPlanRuleState(planActivationPlan || selectedPlan).text || '');
+        items[idx].detectStatus = autoDetectStatus || '';
+        saveClaimsDbItems(items);
+    };
+
+    var _syncCurrentFromSelectedClaimBase = syncCurrentFromSelectedClaim;
+    syncCurrentFromSelectedClaim = function () {
+        _syncCurrentFromSelectedClaimBase();
+        var rec = getSelectedClaimRecord();
+        if (!rec) return;
+        if (rec.armedAt) planActivationAt = rec.armedAt;
+        if (rec.armedPlan) planActivationPlan = String(rec.armedPlan).indexOf('Wrath Sin') === 0 ? 'Wrath Sin' : rec.armedPlan;
+        if (rec.armedEnergy) planActivationEnergy = rec.armedEnergy;
+        if (rec.armedBoosterCd) planActivationBoosterCd = rec.armedBoosterCd;
+        if (rec.expiresAt) planActivationExpiresAt = rec.expiresAt;
+        if (rec.paymentRequired) paymentRequiredText = rec.paymentRequired;
+        if (rec.paymentVerifiedAt) paymentVerifiedAt = rec.paymentVerifiedAt;
+        if (rec.paymentVerifiedText) paymentVerifiedText = rec.paymentVerifiedText;
+    };
+
+    var _pushCurrentClaimToBackendBase = pushCurrentClaimToBackend;
+    pushCurrentClaimToBackend = function () {
+        upsertCurrentClaimRecord();
+        return _pushCurrentClaimToBackendBase();
+    };
+
+    openTermsModal = function (plan) {
+        activeTermsPlan = plan || 'Terms';
+        var bodyText = 'Terms not found.';
+        if (plan === 'Pride Sin') bodyText = '(Can start with any amount of energy!)';
+        if (plan === 'Wrath Sin') bodyText = '(Choose your Wrath stage first. Stage 1 starts at 0 energy, Stage 2 at 250 energy, Stage 3 at 500 energy, Stage 4 at 750 energy. Required payment: 2 Xanax to admin. Can combine with Envy plan.)';
+        if (plan === 'Envy Sin') bodyText = '(Must start at 1000 energy with 0 booster CD, take 4 E-DVD\'s, then take Ecstasy! Required payment: 5 Xanax to admin. Combinable with Wrath for Xanax coverage.)';
+        var existing = document.getElementById('si-7ds-terms-modal');
+        if (existing) existing.remove();
+        var modal = document.createElement('div');
+        modal.id = 'si-7ds-terms-modal';
+        modal.innerHTML = '<div class="si-7ds-terms-card"><button type="button" class="si-7ds-terms-close">×</button><div class="si-7ds-terms-title">' + esc(activeTermsPlan) + ' Terms</div><div class="si-7ds-terms-body">' + esc(bodyText) + '</div></div>';
+        document.body.appendChild(modal);
+        var closer = modal.querySelector('.si-7ds-terms-close');
+        if (closer) closer.addEventListener('click', function () { modal.remove(); });
+        modal.addEventListener('click', function (ev) { if (ev.target === modal) modal.remove(); });
+    };
+
+    getMemberStatusCardHtml = function () {
+        var expiry = planActivationExpiresAt || (getPlanExpiryMs(planActivationPlan, planActivationAt) ? new Date(getPlanExpiryMs(planActivationPlan, planActivationAt)).toLocaleString() : '—');
+        var rule = getPlanRuleState(planActivationPlan || selectedPlan);
+        return ''
+            + '<div class="si-7ds-card" id="si-member-status-card">'
+            +   '<div class="si-7ds-card-title">Member Claim Status</div>'
+            +   '<div class="si-7ds-summary-grid">'
+            +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationPlan || selectedPlan || 'None') + '</div><div class="si-7ds-summary-label">Armed plan</div></div>'
+            +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(planActivationAt || '—') + '</div><div class="si-7ds-summary-label">Armed at</div></div>'
+            +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + esc(expiry || '—') + '</div><div class="si-7ds-summary-label">Expires at</div></div>'
+            +   '</div>'
+            +   '<div class="si-7ds-text"><strong>Wrath stage:</strong> ' + esc(planActivationPlan === 'Wrath Sin' ? getWrathStageDisplay(wrathSelectedStage) : '—') + '</div>'
+            +   '<div class="si-7ds-text"><strong>Energy at arm:</strong> ' + esc(planActivationEnergy || '—') + '</div>'
+            +   '<div class="si-7ds-text"><strong>Booster CD at arm:</strong> ' + esc(planActivationBoosterCd || '—') + '</div>'
+            +   '<div class="si-7ds-text"><strong>Rule check:</strong> ' + esc(rule.text || '—') + '</div>'
+            +   '<div class="si-7ds-text"><strong>Payment required:</strong> ' + esc(paymentRequiredText || '—') + '</div>'
+            +   '<div class="si-7ds-text"><strong>Payment verify:</strong> ' + esc(paymentVerificationStatus || 'Not armed') + (paymentVerifiedText ? ' | ' + esc(paymentVerifiedText) : '') + '</div>'
+            +   '<div class="si-7ds-text"><strong>OD detect:</strong> ' + esc(autoDetectStatus || 'Idle') + (autoOdDetectedAt ? ' | Last hit: ' + esc(autoOdDetectedAt) : '') + '</div>'
+            +   '<div class="si-7ds-pillrow"><span class="si-7ds-status-badge ' + getStatusClass(claimStatus) + '">' + esc(claimStatus || 'Not submitted') + '</span></div>'
+            + '</div>';
+    };
+
+    var _enhanceOverlayDomBase = enhanceOverlayDom;
+    enhanceOverlayDom = function () {
+        _enhanceOverlayDomBase();
+        if (!overlay || activeTab !== 'plans') return;
+        Array.prototype.slice.call(overlay.querySelectorAll('.si-7ds-plan-box')).forEach(function (box) {
+            var nameEl = box.querySelector('.si-7ds-plan-name');
+            var grid = box.querySelector('.si-7ds-plan-grid');
+            var actions = box.querySelector('.si-7ds-plan-actions');
+            if (!nameEl || !grid || !actions) return;
+            var name = String(nameEl.textContent || '').trim();
+            if (name === 'Wrath Sin') {
+                grid.innerHTML = ''
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">2 Xanax</div></div>'
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">48 hours</div></div>'
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">S1 5 / S2 10 / S3 15 / S4 20</div></div>'
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">Pick stage button first</div></div>';
+                actions.innerHTML = ''
+                    + '<button type="button" class="si-7ds-btn" data-action="select-wrath-stage" data-stage="Stage 1">Stage 1</button>'
+                    + '<button type="button" class="si-7ds-btn" data-action="select-wrath-stage" data-stage="Stage 2">Stage 2</button>'
+                    + '<button type="button" class="si-7ds-btn" data-action="select-wrath-stage" data-stage="Stage 3">Stage 3</button>'
+                    + '<button type="button" class="si-7ds-btn" data-action="select-wrath-stage" data-stage="Stage 4">Stage 4</button>'
+                    + '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Wrath Sin">Terms</button>';
+                if (!box.querySelector('.si-7ds-wrath-stage-note')) {
+                    var note = document.createElement('div');
+                    note.className = 'si-7ds-text si-7ds-wrath-stage-note';
+                    note.innerHTML = '<strong>Selected stage:</strong> ' + esc(getWrathStageDisplay(wrathSelectedStage));
+                    actions.insertAdjacentElement('afterend', note);
+                } else {
+                    box.querySelector('.si-7ds-wrath-stage-note').innerHTML = '<strong>Selected stage:</strong> ' + esc(getWrathStageDisplay(wrathSelectedStage));
+                }
+            }
+            if (name === 'Envy Sin') {
+                grid.innerHTML = ''
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">25 Xanax / 3 E-DVD’s</div></div>'
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">5 Xanax</div></div>'
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">48 hours</div></div>'
+                    + '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">1000 Energy / 0 booster CD</div></div>';
+            }
+        });
+    };
+
+    var _bindOverlayEventsBase = bindOverlayEvents;
+    bindOverlayEvents = function () {
+        _bindOverlayEventsBase();
+        if (!overlay) return;
+        overlay.querySelectorAll('[data-action="select-wrath-stage"]').forEach(function (btn) {
+            if (btn.dataset.boundExt) return;
+            btn.dataset.boundExt = '1';
+            btn.addEventListener('click', function () {
+                var stage = btn.getAttribute('data-stage') || '';
+                armWrathStage(stage).then(function () {
+                    saveSession();
+                    renderOverlay();
+                }).catch(function () {
+                    saveSession();
+                    renderOverlay();
+                });
+            });
+        });
+    };
+
+
+    // ---- v2.8.9 admin receipt verification extension ----
+    var adminReceiptVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified_at_ext', '') : '');
+    var adminReceiptVerifiedText = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified_text_ext', '') : '');
+    var adminReceiptVerificationStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verification_status_ext', 'Idle') : 'Idle');
+    var adminReceiptFingerprint = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_fingerprint_ext', '') : '');
+    var adminReceiptVerifiedClaimId = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified_claim_id_ext', '') : '');
+
+    var _saveSessionV289 = saveSession;
+    saveSession = function () {
+        _saveSessionV289();
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_admin_receipt_verified_at_ext', adminReceiptVerifiedAt || '');
+            GM_setValue('si_admin_receipt_verified_text_ext', adminReceiptVerifiedText || '');
+            GM_setValue('si_admin_receipt_verification_status_ext', adminReceiptVerificationStatus || 'Idle');
+            GM_setValue('si_admin_receipt_fingerprint_ext', adminReceiptFingerprint || '');
+            GM_setValue('si_admin_receipt_verified_claim_id_ext', adminReceiptVerifiedClaimId || '');
+        }
+    };
+
+    function getPlanNameFromRecord(rec) {
+        var armed = String(rec && rec.armedPlan || '');
+        if (armed.indexOf('Wrath Sin') === 0) return 'Wrath Sin';
+        if (armed.indexOf('Pride Sin') === 0) return 'Pride Sin';
+        if (armed.indexOf('Envy Sin') === 0) return 'Envy Sin';
+        return String(rec && rec.plan || selectedPlan || '');
+    }
+
+    function getClaimPaymentRequirement(rec) {
+        var plan = getPlanNameFromRecord(rec);
+        return getPlanPaymentRequirement(plan);
+    }
+
+    function getClaimMemberHints(rec) {
+        var hints = [];
+        var member = String(rec && rec.member || '').trim();
+        var memberId = String(rec && (rec.memberId || rec.playerId) || '').trim();
+        if (member) hints.push(member.toLowerCase());
+        if (memberId) hints.push(memberId.toLowerCase());
+        return hints.filter(Boolean);
+    }
+
+    function detectAdminReceiptForClaim(entries, rec) {
+        var requirement = getClaimPaymentRequirement(rec);
+        if (!requirement.qty || !requirement.item) return null;
+        var armedAtMs = parseIsoOrLocalTimestamp((rec && rec.armedAt) || planActivationAt || '');
+        var hints = getClaimMemberHints(rec);
+        var planText = String((rec && (rec.paymentRequired || rec.paymentVerifiedText)) || requirement.text || '').toLowerCase();
+        var matches = (entries || []).filter(function (entry) {
+            var ts = (entry && entry.timestamp ? entry.timestamp * 1000 : 0);
+            if (armedAtMs && ts && ts < armedAtMs) return false;
+            var text = String(entry && entry.text || '').toLowerCase();
+            if (!text) return false;
+            var hasReceive = extHasKeyword(text, ['received', 'receive', 'you got', 'you received', 'was sent', 'mail', 'trade', 'traded', 'transfer']);
+            var hasItem = text.indexOf(requirement.item) >= 0;
+            var hasQty = text.indexOf(String(requirement.qty)) >= 0 || (requirement.qty === 2 && (text.indexOf('two') >= 0 || text.indexOf('pair') >= 0));
+            var hasMember = !hints.length || hints.some(function (h) { return text.indexOf(h) >= 0; });
+            return hasReceive && hasItem && hasQty && hasMember;
+        }).sort(function (a, b) { return (b.timestamp || 0) - (a.timestamp || 0); });
+        if (!matches.length) return null;
+        var hit = matches[0];
+        hit.requirementText = planText || requirement.text || '';
+        return hit;
+    }
+
+    function writeAdminReceiptBackToClaim(rec) {
+        if (!rec || !rec.id) return;
+        var items = getClaimsDbItems();
+        var idx = items.findIndex(function (item) { return item && item.id === rec.id; });
+        if (idx < 0) return;
+        items[idx].adminReceiptVerifiedAt = adminReceiptVerifiedAt || '';
+        items[idx].adminReceiptVerifiedText = adminReceiptVerifiedText || '';
+        items[idx].adminReceiptVerificationStatus = adminReceiptVerificationStatus || 'Idle';
+        saveClaimsDbItems(items);
+    }
+
+    function runAdminPaymentVerification(force) {
+        if (!isAdmin() || !memberApiKey) return Promise.resolve(null);
+        var rec = getSelectedClaimRecord();
+        if (!rec || !rec.id) {
+            adminReceiptVerificationStatus = 'Select a claim to verify admin receipt';
+            saveSession();
+            if (force) renderOverlay();
+            return Promise.resolve(null);
+        }
+        var plan = getPlanNameFromRecord(rec);
+        var requirement = getClaimPaymentRequirement(rec);
+        if (!plan || !requirement.qty) {
+            adminReceiptVerificationStatus = 'No payment rule for selected claim';
+            saveSession();
+            if (force) renderOverlay();
+            return Promise.resolve(null);
+        }
+        if (adminReceiptVerifiedClaimId !== rec.id) {
+            adminReceiptVerifiedAt = String(rec.adminReceiptVerifiedAt || '');
+            adminReceiptVerifiedText = String(rec.adminReceiptVerifiedText || '');
+            adminReceiptVerificationStatus = String(rec.adminReceiptVerificationStatus || ('Checking admin receipt for ' + requirement.text));
+            adminReceiptFingerprint = '';
+            adminReceiptVerifiedClaimId = rec.id;
+        }
+        adminReceiptVerificationStatus = adminReceiptVerifiedAt ? ('Verified in admin log at ' + adminReceiptVerifiedAt) : ('Checking admin receipt for ' + requirement.text + '...');
+        saveSession();
+        if (force) renderOverlay();
+        return getTornOdFeed(memberApiKey).then(function (data) {
+            if (data && data.error) {
+                adminReceiptVerificationStatus = 'Admin log check failed';
+                saveSession();
+                if (force) renderOverlay();
+                return null;
+            }
+            var entries = collectActivityEntries(data || {});
+            var hit = detectAdminReceiptForClaim(entries, rec);
+            if (!hit) {
+                adminReceiptVerificationStatus = 'Waiting for admin log receipt of ' + requirement.text + ' from ' + (rec.member || 'member');
+                adminReceiptVerifiedText = adminReceiptVerifiedText || '';
+                adminReceiptVerifiedAt = '';
+                writeAdminReceiptBackToClaim(rec);
+                saveSession();
+                if (force) renderOverlay();
+                return null;
+            }
+            var fp = String((hit.id || '') + '|' + (hit.timestamp || '') + '|' + String(hit.text || '').slice(0, 160));
+            adminReceiptFingerprint = fp;
+            adminReceiptVerifiedClaimId = rec.id;
+            adminReceiptVerifiedAt = hit.timestamp ? new Date(hit.timestamp * 1000).toLocaleString() : new Date().toLocaleString();
+            adminReceiptVerifiedText = 'Admin log matched ' + requirement.text + ' from ' + (rec.member || 'member') + '.';
+            adminReceiptVerificationStatus = 'Verified in admin log at ' + adminReceiptVerifiedAt;
+            if (claimId === rec.id) {
+                var marker = '[Admin receipt verified ' + adminReceiptVerifiedAt + ']';
+                if (String(claimProof || '').indexOf(marker) < 0) {
+                    claimProof = (claimProof ? (claimProof + ' | ') : '') + marker;
+                }
+            }
+            writeAdminReceiptBackToClaim(rec);
+            addClaimHistoryEntry((sessionName || 'Admin') + ' verified insurance payment in admin log for claim ' + rec.id + '.');
+            saveSession();
+            if (force) renderOverlay();
+            return hit;
+        }).catch(function () {
+            adminReceiptVerificationStatus = 'Admin log check failed';
+            saveSession();
+            if (force) renderOverlay();
+            return null;
+        });
+    }
+
+    var _saveBackendAuthFromOverlayV289 = saveBackendAuthFromOverlay;
+    saveBackendAuthFromOverlay = function () {
+        _saveBackendAuthFromOverlayV289();
+        var keyEl = overlay && overlay.querySelector('#si-login-api-key');
+        var factionEl = overlay && overlay.querySelector('#si-faction-id-lock');
+        if (keyEl) memberApiKey = String(keyEl.value || '').trim();
+        if (factionEl) factionIdLock = String(factionEl.value || '').trim();
+        authMode = memberApiKey ? 'torn-api' : (authMode || 'local');
+        saveSession();
+    };
+
+    backendAdminLogin = function () {
+        saveBackendAuthFromOverlay();
+        if (!apiBase || !memberApiKey || !factionIdLock) {
+            window.alert('Fill in API Base URL, Torn API key, and Faction ID lock first.');
+            return Promise.resolve(null);
+        }
+        return apiRequest('POST', '/api/auth/faction-login', {
+            api_key: memberApiKey,
+            faction_id: factionIdLock,
+            secret: syncSecret
+        }).then(function (data) {
+            if (data && data.ok && data.user) {
+                sessionName = data.user.name || data.user.username || 'Member';
+                sessionRole = data.user.role || 'member';
+                authMode = 'torn-api';
+                backendStatus = 'API key login ok';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+                startAdminClaimNotifications();
+                startMemberAutoDetection();
+                return data;
+            }
+            window.alert((data && data.error) ? data.error : 'API key login failed.');
+            return data;
+        }).catch(function () {
+            backendStatus = 'API key login failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    };
+
+    backendWhoAmI = function () {
+        saveBackendAuthFromOverlay();
+        if (!apiBase || !memberApiKey || !factionIdLock) return Promise.resolve(null);
+        return apiRequest('POST', '/api/auth/faction-login', {
+            api_key: memberApiKey,
+            faction_id: factionIdLock,
+            secret: syncSecret
+        }).then(function (data) {
+            if (data && data.ok && data.user) {
+                sessionName = data.user.name || data.user.username || 'Member';
+                sessionRole = data.user.role || 'member';
+                authMode = 'torn-api';
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () { return null; });
+    };
+
+    var _startAdminClaimNotificationsV289 = startAdminClaimNotifications;
+    startAdminClaimNotifications = function () {
+        _startAdminClaimNotificationsV289();
+        if (!isAdmin()) return;
+        runAdminPaymentVerification(false).catch(function () {});
+        if (adminNotifyTimer) {
+            clearInterval(adminNotifyTimer);
+            adminNotifyTimer = setInterval(function () {
+                if (apiBase && syncSecret) {
+                    syncClaimsFromBackend().catch(function () {});
+                }
+                runAdminPaymentVerification(false).catch(function () {});
+            }, 60000);
+        }
+    };
+
+    var _selectClaimByIdV289 = selectClaimById;
+    selectClaimById = function (id) {
+        _selectClaimByIdV289(id);
+        if (isAdmin()) {
+            runAdminPaymentVerification(true).catch(function () {});
+        }
+    };
+
+    var _renderOverlayV289 = renderOverlay;
+    renderOverlay = function () {
+        _renderOverlayV289();
+        if (!overlay) return;
+        if (isAdmin()) {
+            var reviewPanel = overlay.querySelector('.si-7ds-admin-panel');
+            if (reviewPanel && !overlay.querySelector('#si-admin-receipt-card')) {
+                var rec = getSelectedClaimRecord();
+                var req = getClaimPaymentRequirement(rec);
+                var block = ''
+                    + '<div id="si-admin-receipt-card" class="si-7ds-note-box">'
+                    +   '<div class="si-7ds-text"><strong>Required payment:</strong> ' + esc((rec && rec.paymentRequired) || (req.text || 'Not set')) + '</div>'
+                    +   '<div class="si-7ds-text"><strong>Admin receipt:</strong> ' + esc(adminReceiptVerificationStatus || 'Idle') + '</div>'
+                    +   '<div class="si-7ds-text"><strong>Receipt proof:</strong> ' + esc(adminReceiptVerifiedText || 'Waiting for admin log match') + '</div>'
+                    +   '<div class="si-7ds-plan-actions">'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="verify-admin-receipt">Verify Admin Receipt</button>'
+                    +   '</div>'
+                    + '</div>';
+                var target = reviewPanel.querySelector('.si-7ds-admin-note-box') || reviewPanel;
+                target.insertAdjacentHTML('beforebegin', block);
+            }
+            overlay.querySelectorAll('[data-action="verify-admin-receipt"]').forEach(function (btn) {
+                if (btn.dataset.bound) return;
+                btn.dataset.bound = '1';
+                btn.addEventListener('click', function () { runAdminPaymentVerification(true); });
+            });
+        }
+    };
+
+
+    // ===== Admin payout verification extension =====
+    var adminPayoutVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified_at_ext', '') : '');
+    var adminPayoutVerifiedText = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified_text_ext', '') : '');
+    var adminPayoutVerificationStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verification_status_ext', 'Idle') : 'Idle');
+    var adminPayoutFingerprint = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_fingerprint_ext', '') : '');
+    var adminPayoutVerifiedClaimId = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified_claim_id_ext', '') : '');
+
+    var _saveSessionV290 = saveSession;
+    saveSession = function () {
+        _saveSessionV290();
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_admin_payout_verified_at_ext', adminPayoutVerifiedAt || '');
+            GM_setValue('si_admin_payout_verified_text_ext', adminPayoutVerifiedText || '');
+            GM_setValue('si_admin_payout_verification_status_ext', adminPayoutVerificationStatus || 'Idle');
+            GM_setValue('si_admin_payout_fingerprint_ext', adminPayoutFingerprint || '');
+            GM_setValue('si_admin_payout_verified_claim_id_ext', adminPayoutVerifiedClaimId || '');
+        }
+    };
+
+    function parseRequirementText(raw) {
+        var text = String(raw || '').trim();
+        if (!text) return { text: '', qty: 0, item: '' };
+        var normalized = text.toLowerCase().replace(/[,]/g, ' ').replace(/\s+/g, ' ').trim();
+        var m = normalized.match(/(\d+)\s*(xanax|e-?dvd(?:s)?|edvd(?:s)?|dvd(?:s)?|ecstasy|points?)/i);
+        if (!m) return { text: text, qty: 0, item: '' };
+        var qty = parseInt(m[1], 10) || 0;
+        var item = String(m[2] || '').toLowerCase();
+        if (item.indexOf('dvd') >= 0) item = 'dvd';
+        return { text: text, qty: qty, item: item };
+    }
+
+    function getClaimPayoutRequirement(rec) {
+        var raw = String((rec && rec.payout) || payoutAmount || '').trim();
+        if (!raw) {
+            var plan = getPlanNameFromRecord(rec);
+            if (plan === 'Pride Sin') raw = '6 Xanax';
+            else if (plan === 'Envy Sin') raw = '25 Xanax';
+            else if (plan === 'Wrath Sin') {
+                var stack = String((rec && rec.stack) || '').toLowerCase();
+                if (stack.indexOf('4') >= 0) raw = '20 Xanax';
+                else if (stack.indexOf('3') >= 0) raw = '15 Xanax';
+                else if (stack.indexOf('2') >= 0) raw = '10 Xanax';
+                else raw = '5 Xanax';
+            }
+        }
+        return parseRequirementText(raw);
+    }
+
+    function detectAdminPayoutForClaim(entries, rec) {
+        var requirement = getClaimPayoutRequirement(rec);
+        if (!requirement.qty || !requirement.item) return null;
+        var fromMs = parseIsoOrLocalTimestamp((rec && (rec.adminReceiptVerifiedAt || rec.updatedAt || rec.armedAt)) || '');
+        var hints = getClaimMemberHints(rec);
+        var matches = (entries || []).filter(function (entry) {
+            var ts = (entry && entry.timestamp ? entry.timestamp * 1000 : 0);
+            if (fromMs && ts && ts < fromMs) return false;
+            var text = String(entry && entry.text || '').toLowerCase();
+            if (!text) return false;
+            var hasSend = extHasKeyword(text, [' sent ', ' send ', ' gave ', ' transfer', ' traded ', ' trade ', ' mailed ', ' mail ', ' you sent ', ' you gave ']);
+            var hasItem = requirement.item === 'dvd' ? (text.indexOf('dvd') >= 0) : (text.indexOf(requirement.item) >= 0);
+            var hasQty = text.indexOf(String(requirement.qty)) >= 0 || (requirement.qty === 2 && (text.indexOf('two') >= 0 || text.indexOf('pair') >= 0));
+            var hasMember = !hints.length || hints.some(function (h) { return text.indexOf(h) >= 0; });
+            return hasSend && hasItem && hasQty && hasMember;
+        }).sort(function (a, b) { return (b.timestamp || 0) - (a.timestamp || 0); });
+        return matches.length ? matches[0] : null;
+    }
+
+    function writeAdminPayoutBackToClaim(rec) {
+        if (!rec || !rec.id) return;
+        var items = getClaimsDbItems();
+        var idx = items.findIndex(function (item) { return item && item.id === rec.id; });
+        if (idx < 0) return;
+        items[idx].adminPayoutVerifiedAt = adminPayoutVerifiedAt || '';
+        items[idx].adminPayoutVerifiedText = adminPayoutVerifiedText || '';
+        items[idx].adminPayoutVerificationStatus = adminPayoutVerificationStatus || 'Idle';
+        items[idx].paidAt = adminPayoutVerifiedAt || items[idx].paidAt || '';
+        items[idx].completedLocked = adminPayoutVerifiedAt ? 'yes' : (items[idx].completedLocked || '');
+        saveClaimsDbItems(items);
+    }
+
+    function runAdminPayoutVerification(force) {
+        if (!isAdmin() || !memberApiKey) return Promise.resolve(null);
+        var rec = getSelectedClaimRecord();
+        if (!rec || !rec.id) {
+            adminPayoutVerificationStatus = 'Select a claim to verify payout';
+            saveSession();
+            if (force) renderOverlay();
+            return Promise.resolve(null);
+        }
+        var requirement = getClaimPayoutRequirement(rec);
+        if (!requirement.qty) {
+            adminPayoutVerificationStatus = 'Set payout amount first';
+            saveSession();
+            if (force) renderOverlay();
+            return Promise.resolve(null);
+        }
+        if (adminPayoutVerifiedClaimId !== rec.id) {
+            adminPayoutVerifiedAt = String(rec.adminPayoutVerifiedAt || rec.paidAt || '');
+            adminPayoutVerifiedText = String(rec.adminPayoutVerifiedText || '');
+            adminPayoutVerificationStatus = String(rec.adminPayoutVerificationStatus || ('Checking admin payout for ' + requirement.text));
+            adminPayoutFingerprint = '';
+            adminPayoutVerifiedClaimId = rec.id;
+        }
+        adminPayoutVerificationStatus = adminPayoutVerifiedAt ? ('Verified payout at ' + adminPayoutVerifiedAt) : ('Checking admin payout for ' + requirement.text + '...');
+        saveSession();
+        if (force) renderOverlay();
+        return getTornOdFeed(memberApiKey).then(function (data) {
+            var entries = collectActivityEntries(data);
+            var hit = detectAdminPayoutForClaim(entries, rec);
+            if (!hit) {
+                adminPayoutVerificationStatus = 'No payout log match found yet';
+                adminPayoutVerifiedAt = '';
+                adminPayoutVerifiedText = '';
+                adminPayoutFingerprint = '';
+                writeAdminPayoutBackToClaim(rec);
+                saveSession();
+                if (force) renderOverlay();
+                return null;
+            }
+            adminPayoutVerifiedAt = formatTimestampMs((hit.timestamp || 0) * 1000);
+            adminPayoutVerifiedText = String(hit.text || '').trim();
+            adminPayoutFingerprint = String(hit.id || adminPayoutVerifiedAt || adminPayoutVerifiedText || '');
+            adminPayoutVerificationStatus = 'Verified payout in admin log at ' + adminPayoutVerifiedAt;
+            writeAdminPayoutBackToClaim(rec);
+            saveSession();
+            if (force) renderOverlay();
+            return hit;
+        }).catch(function () {
+            adminPayoutVerificationStatus = 'Payout verification failed';
+            saveSession();
+            if (force) renderOverlay();
+            return null;
+        });
+    }
+
+    var _adminSetClaimStatusV290 = adminSetClaimStatus;
+    adminSetClaimStatus = function (nextStatus) {
+        var rec = getSelectedClaimRecord();
+        if (rec && String(rec.completedLocked || '') === 'yes' && nextStatus !== 'Paid') {
+            window.alert('This claim is locked as fully completed.');
+            return;
+        }
+        if (String(claimStatus || '') === 'Paid' && nextStatus !== 'Paid') {
+            window.alert('This claim is already marked Paid and locked.');
+            return;
+        }
+        if (nextStatus !== 'Paid') return _adminSetClaimStatusV290(nextStatus);
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        upsertCurrentClaimRecord();
+        runAdminPayoutVerification(true).then(function (hit) {
+            if (!hit) {
+                window.alert('No matching payout found in admin logs yet. Send payout first, then verify again.');
+                return;
+            }
+            var paidStamp = adminPayoutVerifiedAt || new Date().toLocaleString();
+            var lockNote = 'Payout verified in admin log at ' + paidStamp;
+            if (adminPayoutVerifiedText) lockNote += ' | ' + adminPayoutVerifiedText;
+            decisionNote = decisionNote ? (decisionNote + ' | ' + lockNote) : lockNote;
+            claimStatus = 'Paid';
+            payoutAmount = payoutAmount || (getClaimPayoutRequirement(rec).text || '');
+            addClaimHistoryEntry((sessionName || 'Admin') + ' marked claim ' + (claimId || 'unassigned') + ' paid after payout verification.' + (payoutAmount ? ' | Payout: ' + payoutAmount : ''));
+            upsertCurrentClaimRecord();
+            var items = getClaimsDbItems();
+            var idx = items.findIndex(function (item) { return item && item.id === selectedClaimId; });
+            if (idx >= 0) {
+                items[idx].status = 'Paid';
+                items[idx].paidAt = paidStamp;
+                items[idx].completedLocked = 'yes';
+                items[idx].adminPayoutVerifiedAt = adminPayoutVerifiedAt || paidStamp;
+                items[idx].adminPayoutVerifiedText = adminPayoutVerifiedText || '';
+                items[idx].adminPayoutVerificationStatus = adminPayoutVerificationStatus || 'Verified';
+                saveClaimsDbItems(items);
+            }
+            saveSession();
+            pushCurrentClaimToBackend();
+            activeTab = 'claims';
+            renderOverlay();
+        });
+    };
+
+    var _renderOverlayV290 = renderOverlay;
+    renderOverlay = function () {
+        _renderOverlayV290();
+        if (!overlay || !isAdmin()) return;
+        var rec = getSelectedClaimRecord();
+        var reviewPanel = overlay.querySelector('.si-7ds-admin-note-box');
+        if (!reviewPanel || !rec || !rec.id) return;
+        if (!overlay.querySelector('.si-7ds-admin-payout-box')) {
+            var req = getClaimPayoutRequirement(rec);
+            var block = ''
+                + '<div class="si-7ds-card si-7ds-admin-payout-box">'
+                +   '<div class="si-7ds-card-title">Admin Payout</div>'
+                +   '<div class="si-7ds-text"><strong>Required payout:</strong> ' + esc((payoutAmount || req.text || 'Not set')) + '</div>'
+                +   '<div class="si-7ds-text"><strong>Payout status:</strong> ' + esc(adminPayoutVerificationStatus || 'Idle') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Payout proof:</strong> ' + esc(adminPayoutVerifiedText || 'Waiting for admin log match') + '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="verify-admin-payout">Verify Admin Payout</button>'
+                +   '</div>'
+                + '</div>';
+            var target = overlay.querySelector('.si-7ds-admin-receipt-box') || reviewPanel;
+            target.insertAdjacentHTML('afterend', block);
+        }
+        overlay.querySelectorAll('[data-action="verify-admin-payout"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { runAdminPayoutVerification(true); });
+        });
+
+        if (String(claimStatus || '') === 'Paid' || String(rec.completedLocked || '') === 'yes') {
+            ['#si-payout-amount', '#si-decision-note', '#si-claim-stack', '#si-claim-loss', '#si-claim-proof', '#si-claim-note'].forEach(function (sel) {
+                var el = overlay.querySelector(sel);
+                if (el) el.setAttribute('disabled', 'disabled');
+            });
+        }
+    };
+
 })();
