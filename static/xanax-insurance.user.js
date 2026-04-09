@@ -1,5 +1,3 @@
-Sinner's Insurance Copy Paste
-Launcher moved up from the bottom so it stays visible on iPhone/Torn.
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
