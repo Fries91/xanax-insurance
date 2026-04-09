@@ -2562,6 +2562,297 @@
         }, 45000);
     }
 
+
+    var requiredPaymentItem = (typeof GM_getValue === 'function' ? GM_getValue('si_required_payment_item', '') : '');
+    var requiredPaymentQty = (typeof GM_getValue === 'function' ? GM_getValue('si_required_payment_qty', '') : '');
+    var memberPaymentVerified = (typeof GM_getValue === 'function' ? GM_getValue('si_member_payment_verified', 0) : 0);
+    var memberPaymentVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_member_payment_verified_at', '') : '');
+    var memberPaymentProof = (typeof GM_getValue === 'function' ? GM_getValue('si_member_payment_proof', '') : '');
+    var adminReceiptVerified = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified', 0) : 0);
+    var adminReceiptVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_verified_at', '') : '');
+    var adminReceiptProof = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_receipt_proof', '') : '');
+    var adminPayoutVerified = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified', 0) : 0);
+    var adminPayoutVerifiedAt = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_verified_at', '') : '');
+    var adminPayoutProof = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_payout_proof', '') : '');
+
+    syncSecret = syncSecret || '6282';
+    factionIdLock = factionIdLock || '49384';
+
+    function getRequiredPaymentSpec(plan, stackText) {
+        var p = String(plan || '').trim();
+        var s = String(stackText || '').toLowerCase();
+        if (p === 'Pride Sin') return { item: 'Xanax', qty: '2' };
+        if (p === 'Wrath Sin') {
+            if (s.indexOf('4th') >= 0 || s.indexOf('fourth') >= 0) return { item: 'Xanax', qty: '20' };
+            if (s.indexOf('3rd') >= 0 || s.indexOf('third') >= 0) return { item: 'Xanax', qty: '15' };
+            if (s.indexOf('2nd') >= 0 || s.indexOf('second') >= 0) return { item: 'Xanax', qty: '10' };
+            return { item: 'Xanax', qty: '5' };
+        }
+        if (p === 'Envy Sin') return { item: 'Manual', qty: '' };
+        return { item: '', qty: '' };
+    }
+
+    function paymentFlagLabel(flag, at) {
+        return Number(flag) ? ('Verified' + (at ? ' @ ' + at : '')) : 'Pending';
+    }
+
+    function autoFillRequiredPayment() {
+        var spec = getRequiredPaymentSpec(selectedPlan, claimStack);
+        requiredPaymentItem = spec.item || '';
+        requiredPaymentQty = spec.qty || '';
+        upsertCurrentClaimRecord();
+        saveSession();
+        renderOverlay();
+    }
+
+    function markPaymentState(kind) {
+        if (!isAdmin()) { window.alert('Admin login required.'); return; }
+        var now = new Date().toLocaleString();
+        if (kind === 'member') {
+            memberPaymentVerified = 1;
+            memberPaymentVerifiedAt = now;
+            if (!requiredPaymentItem && !requiredPaymentQty) autoFillRequiredPayment();
+        }
+        if (kind === 'receipt') {
+            adminReceiptVerified = 1;
+            adminReceiptVerifiedAt = now;
+        }
+        if (kind === 'payout') {
+            adminPayoutVerified = 1;
+            adminPayoutVerifiedAt = now;
+        }
+        addClaimHistoryEntry((sessionName || 'Admin') + ' verified ' + kind + ' payment state for claim ' + (claimId || 'unassigned') + '.');
+        upsertCurrentClaimRecord();
+        saveSession();
+        pushCurrentClaimToBackend();
+        renderOverlay();
+    }
+
+    function clearPaymentState(kind) {
+        if (!isAdmin()) { window.alert('Admin login required.'); return; }
+        if (kind === 'member') { memberPaymentVerified = 0; memberPaymentVerifiedAt = ''; }
+        if (kind === 'receipt') { adminReceiptVerified = 0; adminReceiptVerifiedAt = ''; }
+        if (kind === 'payout') { adminPayoutVerified = 0; adminPayoutVerifiedAt = ''; }
+        addClaimHistoryEntry((sessionName || 'Admin') + ' cleared ' + kind + ' payment state for claim ' + (claimId || 'unassigned') + '.');
+        upsertCurrentClaimRecord();
+        saveSession();
+        pushCurrentClaimToBackend();
+        renderOverlay();
+    }
+
+    var _origSaveSession = saveSession;
+    saveSession = function () {
+        _origSaveSession();
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_required_payment_item', requiredPaymentItem || '');
+            GM_setValue('si_required_payment_qty', requiredPaymentQty || '');
+            GM_setValue('si_member_payment_verified', Number(memberPaymentVerified) ? 1 : 0);
+            GM_setValue('si_member_payment_verified_at', memberPaymentVerifiedAt || '');
+            GM_setValue('si_member_payment_proof', memberPaymentProof || '');
+            GM_setValue('si_admin_receipt_verified', Number(adminReceiptVerified) ? 1 : 0);
+            GM_setValue('si_admin_receipt_verified_at', adminReceiptVerifiedAt || '');
+            GM_setValue('si_admin_receipt_proof', adminReceiptProof || '');
+            GM_setValue('si_admin_payout_verified', Number(adminPayoutVerified) ? 1 : 0);
+            GM_setValue('si_admin_payout_verified_at', adminPayoutVerifiedAt || '');
+            GM_setValue('si_admin_payout_proof', adminPayoutProof || '');
+            GM_setValue('si_sync_secret', syncSecret || '6282');
+            GM_setValue('si_faction_id_lock', factionIdLock || '49384');
+        }
+    };
+
+    var _origSyncCurrent = syncCurrentFromSelectedClaim;
+    syncCurrentFromSelectedClaim = function () {
+        _origSyncCurrent();
+        var rec = getSelectedClaimRecord();
+        if (!rec) return;
+        requiredPaymentItem = rec.requiredPaymentItem || requiredPaymentItem || '';
+        requiredPaymentQty = rec.requiredPaymentQty || requiredPaymentQty || '';
+        memberPaymentVerified = Number(rec.memberPaymentVerified) ? 1 : 0;
+        memberPaymentVerifiedAt = rec.memberPaymentVerifiedAt || '';
+        memberPaymentProof = rec.memberPaymentProof || '';
+        adminReceiptVerified = Number(rec.adminReceiptVerified) ? 1 : 0;
+        adminReceiptVerifiedAt = rec.adminReceiptVerifiedAt || '';
+        adminReceiptProof = rec.adminReceiptProof || '';
+        adminPayoutVerified = Number(rec.adminPayoutVerified) ? 1 : 0;
+        adminPayoutVerifiedAt = rec.adminPayoutVerifiedAt || '';
+        adminPayoutProof = rec.adminPayoutProof || '';
+    };
+
+    var _origUpdateClaimField = updateClaimField;
+    updateClaimField = function (field, value) {
+        if (field === 'requiredPaymentItem') requiredPaymentItem = value || '';
+        else if (field === 'requiredPaymentQty') requiredPaymentQty = value || '';
+        else if (field === 'memberPaymentProof') memberPaymentProof = value || '';
+        else if (field === 'adminReceiptProof') adminReceiptProof = value || '';
+        else if (field === 'adminPayoutProof') adminPayoutProof = value || '';
+        else return _origUpdateClaimField(field, value);
+        upsertCurrentClaimRecord();
+        saveSession();
+    };
+
+    var _origUpsert = upsertCurrentClaimRecord;
+    upsertCurrentClaimRecord = function () {
+        _origUpsert();
+        if (!claimId) return;
+        var items = getClaimsDbItems();
+        var idx = items.findIndex(function (item) { return item && item.id === claimId; });
+        if (idx < 0) return;
+        items[idx].requiredPaymentItem = requiredPaymentItem || '';
+        items[idx].requiredPaymentQty = requiredPaymentQty || '';
+        items[idx].memberPaymentVerified = Number(memberPaymentVerified) ? 1 : 0;
+        items[idx].memberPaymentVerifiedAt = memberPaymentVerifiedAt || '';
+        items[idx].memberPaymentProof = memberPaymentProof || '';
+        items[idx].adminReceiptVerified = Number(adminReceiptVerified) ? 1 : 0;
+        items[idx].adminReceiptVerifiedAt = adminReceiptVerifiedAt || '';
+        items[idx].adminReceiptProof = adminReceiptProof || '';
+        items[idx].adminPayoutVerified = Number(adminPayoutVerified) ? 1 : 0;
+        items[idx].adminPayoutVerifiedAt = adminPayoutVerifiedAt || '';
+        items[idx].adminPayoutProof = adminPayoutProof || '';
+        saveClaimsDbItems(items.slice(0, 25));
+    };
+
+    pushCurrentClaimToBackend = function () {
+        if (!claimId) return Promise.resolve(null);
+        var action = isAdmin() ? 'admin_update' : (isMember() ? 'member_submit' : 'guest');
+        var payload = {
+            secret: syncSecret,
+            action: action,
+            auth: buildServerAuthPayload(),
+            claim: {
+                id: claimId || '',
+                plan: selectedPlan || 'None',
+                status: claimStatus || 'Not submitted',
+                note: claimNote || '',
+                loss: claimLoss || '',
+                proof: claimProof || '',
+                stack: claimStack || '',
+                payout: payoutAmount || '',
+                decision: decisionNote || '',
+                requiredPaymentItem: requiredPaymentItem || '',
+                requiredPaymentQty: requiredPaymentQty || '',
+                memberPaymentVerified: Number(memberPaymentVerified) ? 1 : 0,
+                memberPaymentVerifiedAt: memberPaymentVerifiedAt || '',
+                memberPaymentProof: memberPaymentProof || '',
+                adminReceiptVerified: Number(adminReceiptVerified) ? 1 : 0,
+                adminReceiptVerifiedAt: adminReceiptVerifiedAt || '',
+                adminReceiptProof: adminReceiptProof || '',
+                adminPayoutVerified: Number(adminPayoutVerified) ? 1 : 0,
+                adminPayoutVerifiedAt: adminPayoutVerifiedAt || '',
+                adminPayoutProof: adminPayoutProof || '',
+                member: sessionName || 'Guest',
+                updatedAt: new Date().toLocaleString(),
+                armedAt: planActivationAt || '',
+                armedPlan: planActivationPlan || '',
+                armedEnergy: planActivationEnergy || '',
+                armedBoosterCd: planActivationBoosterCd || ''
+            }
+        };
+        return apiRequest('POST', '/api/claims/push', payload).then(function (data) {
+            backendStatus = data && data.ok ? 'Claim pushed' : ((data && data.error) ? data.error : 'Push failed');
+            lastSyncAt = new Date().toLocaleString();
+            if (data && data.claim) {
+                claimStatus = data.claim.status || claimStatus;
+                payoutAmount = data.claim.payout || payoutAmount;
+                decisionNote = data.claim.decision || decisionNote;
+                selectedPlan = data.claim.plan || selectedPlan;
+                claimNote = data.claim.note || claimNote;
+                claimLoss = data.claim.loss || claimLoss;
+                claimProof = data.claim.proof || claimProof;
+                claimStack = data.claim.stack || claimStack;
+                requiredPaymentItem = data.claim.requiredPaymentItem || requiredPaymentItem;
+                requiredPaymentQty = data.claim.requiredPaymentQty || requiredPaymentQty;
+                memberPaymentVerified = Number(data.claim.memberPaymentVerified) ? 1 : 0;
+                memberPaymentVerifiedAt = data.claim.memberPaymentVerifiedAt || memberPaymentVerifiedAt;
+                memberPaymentProof = data.claim.memberPaymentProof || memberPaymentProof;
+                adminReceiptVerified = Number(data.claim.adminReceiptVerified) ? 1 : 0;
+                adminReceiptVerifiedAt = data.claim.adminReceiptVerifiedAt || adminReceiptVerifiedAt;
+                adminReceiptProof = data.claim.adminReceiptProof || adminReceiptProof;
+                adminPayoutVerified = Number(data.claim.adminPayoutVerified) ? 1 : 0;
+                adminPayoutVerifiedAt = data.claim.adminPayoutVerifiedAt || adminPayoutVerifiedAt;
+                adminPayoutProof = data.claim.adminPayoutProof || adminPayoutProof;
+                upsertCurrentClaimRecord();
+            }
+            saveSession();
+            renderOverlay();
+            return data;
+        }).catch(function () {
+            backendStatus = 'Push failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    };
+
+    var _origRenderTabContent = renderTabContent;
+    renderTabContent = function () {
+        var html = _origRenderTabContent();
+        if (activeTab === 'claims') {
+            html = html.replace('<div class="si-7ds-text"><strong>Rule:</strong> ' + esc(getPlanRuleText(selectedPlan)) + '</div>',
+                '<div class="si-7ds-text"><strong>Rule:</strong> ' + esc(getPlanRuleText(selectedPlan)) + '</div>'
+                + '<div class="si-7ds-text"><strong>Required payment:</strong> ' + esc((requiredPaymentQty ? requiredPaymentQty + ' ' : '') + (requiredPaymentItem || 'Not set')) + '</div>');
+
+            if (isMember() && !isAdmin()) {
+                html = html.replace('</textarea></div></div><div class="si-7ds-plan-actions">' + memberActions + '</div></div>',
+                    '</textarea></div>'
+                    + '<div class="si-7ds-field"><label class="si-7ds-label" for="si-member-payment-proof">Payment / transfer proof</label><textarea id="si-member-payment-proof" class="si-7ds-textarea" placeholder="Note what you sent to admin for plan payment">' + esc(memberPaymentProof) + '</textarea></div>'
+                    + '<div class="si-7ds-note-box"><div class="si-7ds-text"><strong>Required payment:</strong> ' + esc((requiredPaymentQty ? requiredPaymentQty + ' ' : '') + (requiredPaymentItem || 'Will be set by admin')) + '</div></div>'
+                    + '</div><div class="si-7ds-plan-actions">' + memberActions + '</div></div>');
+            }
+
+            if (isAdmin()) {
+                var paymentCard = ''
+                    + '<div class="si-7ds-card">'
+                    +   '<div class="si-7ds-card-title">Payment Verification</div>'
+                    +   '<div class="si-7ds-form-grid">'
+                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-required-payment-item">Required member payment item</label><input id="si-required-payment-item" class="si-7ds-input" type="text" value="' + esc(requiredPaymentItem) + '" placeholder="Xanax"></div>'
+                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-required-payment-qty">Required member payment qty</label><input id="si-required-payment-qty" class="si-7ds-input" type="text" value="' + esc(requiredPaymentQty) + '" placeholder="2"></div>'
+                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-member-payment-proof">Member paid in proof</label><textarea id="si-member-payment-proof" class="si-7ds-textarea" placeholder="What was sent to admin?">' + esc(memberPaymentProof) + '</textarea></div>'
+                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-admin-receipt-proof">Payment received proof</label><textarea id="si-admin-receipt-proof" class="si-7ds-textarea" placeholder="Payment received note">' + esc(adminReceiptProof) + '</textarea></div>'
+                    +     '<div class="si-7ds-field"><label class="si-7ds-label" for="si-admin-payout-proof">Payout sent proof</label><textarea id="si-admin-payout-proof" class="si-7ds-textarea" placeholder="Payout sent note">' + esc(adminPayoutProof) + '</textarea></div>'
+                    +   '</div>'
+                    +   '<div class="si-7ds-pillrow">'
+                    +     '<span class="si-7ds-pill">Member paid in: ' + esc(paymentFlagLabel(memberPaymentVerified, memberPaymentVerifiedAt)) + '</span>'
+                    +     '<span class="si-7ds-pill">Payment received: ' + esc(paymentFlagLabel(adminReceiptVerified, adminReceiptVerifiedAt)) + '</span>'
+                    +     '<span class="si-7ds-pill">Payout sent: ' + esc(paymentFlagLabel(adminPayoutVerified, adminPayoutVerifiedAt)) + '</span>'
+                    +   '</div>'
+                    +   '<div class="si-7ds-admin-actions-grid">'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="auto-required-payment">Auto Fill Required</button>'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="verify-member-payment">Mark Member Paid In</button>'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="verify-admin-receipt">Mark Received</button>'
+                    +     '<button type="button" class="si-7ds-btn confirm" data-action="verify-admin-payout">Mark Payout Sent</button>'
+                    +   '</div>'
+                    +   '<div class="si-7ds-admin-actions-grid">'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="clear-member-payment">Clear Member</button>'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="clear-admin-receipt">Clear Received</button>'
+                    +     '<button type="button" class="si-7ds-btn alt" data-action="clear-admin-payout">Clear Payout Sent</button>'
+                    +   '</div>'
+                    + '</div>';
+                html = html.replace('<div class="si-7ds-card"><div class="si-7ds-card-title">History</div>', paymentCard + '<div class="si-7ds-card"><div class="si-7ds-card-title">History</div>');
+            }
+        }
+        return html;
+    };
+
+    var _origBindOverlayEvents = bindOverlayEvents;
+    bindOverlayEvents = function () {
+        _origBindOverlayEvents();
+        if (!overlay) return;
+        [['si-required-payment-item','requiredPaymentItem'],['si-required-payment-qty','requiredPaymentQty'],['si-member-payment-proof','memberPaymentProof'],['si-admin-receipt-proof','adminReceiptProof'],['si-admin-payout-proof','adminPayoutProof']].forEach(function (pair) {
+            var el = overlay.querySelector('#' + pair[0]);
+            if (!el || el.dataset.paymentBound) return;
+            el.dataset.paymentBound = '1';
+            el.addEventListener('input', function () { updateClaimField(pair[1], el.value); });
+        });
+        [['auto-required-payment', function(){ autoFillRequiredPayment(); }], ['verify-member-payment', function(){ markPaymentState('member'); }], ['verify-admin-receipt', function(){ markPaymentState('receipt'); }], ['verify-admin-payout', function(){ markPaymentState('payout'); }], ['clear-member-payment', function(){ clearPaymentState('member'); }], ['clear-admin-receipt', function(){ clearPaymentState('receipt'); }], ['clear-admin-payout', function(){ clearPaymentState('payout'); }]].forEach(function (item) {
+            overlay.querySelectorAll('[data-action="' + item[0] + '"]').forEach(function (btn) {
+                if (btn.dataset.paymentBound) return;
+                btn.dataset.paymentBound = '1';
+                btn.addEventListener('click', item[1]);
+            });
+        });
+    };
+
     function boot() {
         syncCurrentFromSelectedClaim();
         mount();
