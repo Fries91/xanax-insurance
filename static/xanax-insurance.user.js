@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.8.5
+// @version      2.9.0
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -39,7 +39,7 @@
     var claimFilterMember = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_member', '') : '');
     var claimSortMode = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_sort_mode', 'newest') : 'newest');
     var apiBase = (typeof GM_getValue === 'function' ? GM_getValue('si_api_base', 'https://xanax-insurance.onrender.com') : 'https://xanax-insurance.onrender.com');
-    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '') : '');
+    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '6282') : '');
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
     var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
     var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
@@ -53,7 +53,7 @@
     var authUser = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_user', '') : '');
     var authPass = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_pass', '') : '');
     var memberApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_member_api_key', '') : '');
-    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '') : '');
+    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '49384') : '');
     var authMode = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_mode', 'local') : 'local');
 
     var TAB_LABELS = {
@@ -921,23 +921,25 @@
 
     function backendAdminLogin() {
         saveBackendAuthFromOverlay();
-        if (!apiBase || !authUser || !authPass) {
-            window.alert('Fill in API Base URL, admin username, and admin passcode first.');
+        var adminApiKey = String(authPass || memberApiKey || '').trim();
+        if (!apiBase || !adminApiKey) {
+            window.alert('Fill in API Base URL and an admin Torn API key first.');
             return Promise.resolve(null);
         }
-        return apiRequest('POST', '/api/auth/admin-login', {
-            username: authUser,
-            passcode: authPass,
+        return apiRequest('POST', '/api/auth/admin-key-login', {
+            api_key: adminApiKey,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
-                sessionName = data.user.name || data.user.username || authUser;
-                sessionRole = data.user.role || 'guest';
+                sessionName = data.user.name || data.user.username || 'Admin';
+                sessionRole = data.user.role || 'admin';
                 authMode = 'backend-admin';
                 backendStatus = 'Backend admin login ok';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
+                startAdminClaimNotifications();
+                startMemberAutoDetection();
                 return data;
             }
             window.alert((data && data.error) ? data.error : 'Backend admin login failed.');
@@ -1004,15 +1006,15 @@
             }).catch(function () { return null; });
         }
 
-        if (!authUser || !authPass) return Promise.resolve(null);
-        return apiRequest('POST', '/api/auth/admin-login', {
-            username: authUser,
-            passcode: authPass,
+        var adminApiKey = String(authPass || memberApiKey || '').trim();
+        if (!adminApiKey) return Promise.resolve(null);
+        return apiRequest('POST', '/api/auth/admin-key-login', {
+            api_key: adminApiKey,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
-                sessionName = data.user.name || data.user.username || authUser;
-                sessionRole = data.user.role || 'guest';
+                sessionName = data.user.name || data.user.username || 'Admin';
+                sessionRole = data.user.role || 'admin';
                 saveSession();
                 renderOverlay();
             }
@@ -2021,7 +2023,7 @@
             +   '<div class="si-7ds-card-title">API Key Login</div>'
             +   '<div class="si-7ds-field">'
             +     '<label class="si-7ds-label" for="si-faction-id-lock">Faction ID Lock</label>'
-            +     '<input id="si-faction-id-lock" class="si-7ds-input" type="text" value="' + esc(factionIdLock || '') + '" placeholder="Your faction ID">'
+            +     '<input id="si-faction-id-lock" class="si-7ds-input" type="text" value="' + esc(factionIdLock || '49384') + '" placeholder="49384">'
             +   '</div>'
             +   '<div class="si-7ds-field">'
             +     '<label class="si-7ds-label" for="si-login-api-key">Torn API Key</label>'
@@ -2056,7 +2058,7 @@
                     + '</div>'
                     + '<div class="si-7ds-field">'
                     +   '<label class="si-7ds-label" for="si-sync-secret">Sync Secret</label>'
-                    +   '<input id="si-sync-secret" class="si-7ds-input" type="text" value="' + esc(syncSecret || '') + '" placeholder="Set your shared secret">'
+                    +   '<input id="si-sync-secret" class="si-7ds-input" type="text" value="' + esc(syncSecret || '6282') + '" placeholder="6282">'
                     + '</div>'
                     + '<div class="si-backend-status">'
                     +   '<div class="si-7ds-text"><strong>Status:</strong> ' + esc(backendStatus || 'Not tested') + '</div>'
@@ -2071,7 +2073,7 @@
                 : '')
             + '<div class="si-7ds-card">'
             +   '<div class="si-7ds-card-title">Builder Notes</div>'
-            +   '<div class="si-7ds-text">API key login now detects member vs admin automatically and keeps admin-only controls hidden from standard members.</div>'
+            +   '<div class="si-7ds-text">API key login detects member vs admin automatically, uses the live backend routes, and keeps admin-only claim controls hidden from standard members.</div>'
             + '</div>';
     }
 
