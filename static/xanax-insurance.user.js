@@ -1466,15 +1466,43 @@
         return isNaN(n) ? 0 : n;
     }
 
+    function inferPlanPaymentQty(item) {
+        if (!item) return 0;
+        var plan = String(item.plan || '').trim();
+        var stack = String(item.stack || '').trim().toLowerCase();
+        var note = String(item.note || '').toLowerCase();
+
+        if (plan === 'Pride Sin') return 2;
+        if (plan === 'Envy Sin') return 10;
+        if (plan === 'Wrath Sin') {
+            if (stack.indexOf('4') >= 0 || stack.indexOf('fourth') >= 0 || stack.indexOf('4th') >= 0 || note.indexOf('20 xanax') >= 0) return 20;
+            if (stack.indexOf('3') >= 0 || stack.indexOf('third') >= 0 || stack.indexOf('3rd') >= 0 || note.indexOf('15 xanax') >= 0) return 15;
+            if (stack.indexOf('2') >= 0 || stack.indexOf('second') >= 0 || stack.indexOf('2nd') >= 0 || note.indexOf('10 xanax') >= 0) return 10;
+            return 5;
+        }
+        return 0;
+    }
+
     function getOverviewStats() {
         var items = getClaimsDbItems();
+        var verifiedItems = items.filter(function (i) {
+            var status = String(i && i.status || '');
+            return ['Paid', 'Under review', 'Pending review'].indexOf(status) >= 0;
+        });
+        var totalXanaxReceived = verifiedItems.reduce(function (sum, i) {
+            return sum + inferPlanPaymentQty(i);
+        }, 0);
+        var factionShare = totalXanaxReceived * 0.15;
         return {
             total: items.length,
             open: items.filter(function (i) { return ['Pending review', 'Under review'].indexOf(String(i && i.status || '')) >= 0; }).length,
             paid: items.filter(function (i) { return String(i && i.status || '') === 'Paid'; }).length,
             denied: items.filter(function (i) { return String(i && i.status || '') === 'Denied'; }).length,
             payouts: items.reduce(function (sum, i) { return sum + parseMoneyLoose(i && i.payout); }, 0),
-            members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length
+            members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length,
+            totalXanaxReceived: totalXanaxReceived,
+            factionShare: factionShare,
+            insurancePool: totalXanaxReceived - factionShare
         };
     }
 
@@ -2231,17 +2259,22 @@
 
     function renderTabContent() {
         if (activeTab === 'overview') {
+            var overviewStats = getOverviewStats();
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Overview</div>'
                 +   '<div class="si-7ds-summary-grid">'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().total) + '</div><div class="si-7ds-summary-label">Claims</div></div>'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().open) + '</div><div class="si-7ds-summary-label">Open</div></div>'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().denied) + '</div><div class="si-7ds-summary-label">Denied</div></div>'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(getOverviewStats().members) + '</div><div class="si-7ds-summary-label">Members</div></div>'
-                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">$' + String(Math.round(getOverviewStats().payouts)) + '</div><div class="si-7ds-summary-label">Payouts</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(overviewStats.total) + '</div><div class="si-7ds-summary-label">Claims</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(overviewStats.open) + '</div><div class="si-7ds-summary-label">Open</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(overviewStats.paid) + '</div><div class="si-7ds-summary-label">Paid</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(overviewStats.denied) + '</div><div class="si-7ds-summary-label">Denied</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(overviewStats.members) + '</div><div class="si-7ds-summary-label">Members</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">$' + String(Math.round(overviewStats.payouts)) + '</div><div class="si-7ds-summary-label">Payouts</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.totalXanaxReceived * 100) / 100) + '</div><div class="si-7ds-summary-label">Verified Xanax In</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.factionShare * 100) / 100) + '</div><div class="si-7ds-summary-label">Faction 15% Cut</div></div>'
+                +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.insurancePool * 100) / 100) + '</div><div class="si-7ds-summary-label">Insurance Pool 85%</div></div>'
                 +   '</div>'
+                +   '<div class="si-7ds-text" style="margin-top:12px;">15% of verified Xanax plan payments goes to faction. This currently totals from synced claim records using plan/stage amounts.</div>'
                 + '</div>';
         }
 
