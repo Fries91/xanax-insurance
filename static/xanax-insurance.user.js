@@ -127,6 +127,52 @@
         return out;
     }
 
+    function collectPossibleWarItems(raw, depth, seen) {
+        depth = parseInt(depth || 0, 10) || 0;
+        seen = seen || [];
+        if (!raw || depth > 6) return [];
+        if (typeof raw !== 'object') return [];
+        if (seen.indexOf(raw) >= 0) return [];
+        seen.push(raw);
+
+        var items = [];
+        var hasWarSignals = false;
+        var keys = Object.keys(raw);
+        for (var i = 0; i < keys.length; i += 1) {
+            var key = String(keys[i] || '').toLowerCase();
+            if (
+                key === 'start' || key === 'start_at' || key === 'start_time' || key === 'starttime' ||
+                key === 'war_start' || key === 'start_timestamp' || key === 'starts' || key === 'match_start' ||
+                key === 'end' || key === 'end_at' || key === 'end_time' || key === 'endtime' ||
+                key === 'war_end' || key === 'end_timestamp' || key === 'ends' || key === 'match_end' ||
+                key.indexOf('opponent') >= 0 || key.indexOf('enemy') >= 0 || key.indexOf('war') >= 0 ||
+                key.indexOf('faction') >= 0 || key === 'name' || key === 'status'
+            ) {
+                hasWarSignals = true;
+                break;
+            }
+        }
+        if (hasWarSignals) items.push(raw);
+
+        keys.forEach(function (key) {
+            var value = raw[key];
+            if (!value) return;
+            if (Array.isArray(value)) {
+                value.forEach(function (item) {
+                    if (item && typeof item === 'object') {
+                        items = items.concat(collectPossibleWarItems(item, depth + 1, seen));
+                    }
+                });
+                return;
+            }
+            if (typeof value === 'object') {
+                items = items.concat(collectPossibleWarItems(value, depth + 1, seen));
+            }
+        });
+
+        return items;
+    }
+
     function pickWarStartValue(item) {
         if (!item || typeof item !== 'object') return '';
         return item.start || item.start_at || item.start_time || item.startTime || item.war_start || item.start_timestamp || item.starts || item.match_start;
@@ -163,7 +209,22 @@
 
     function parseRankedWarState(data) {
         var container = data && (data.rankedwars || data.rankedWars || data.wars || data);
-        var wars = flattenWarItems(container);
+        var wars = flattenWarItems(container).concat(collectPossibleWarItems(data || {}, 0, []));
+        var uniqueWars = [];
+        var seenKeys = {};
+        wars.forEach(function (item) {
+            if (!item || typeof item !== 'object') return;
+            var key = [
+                String(pickWarStartValue(item) || ''),
+                String(pickWarEndValue(item) || ''),
+                String(extractOpponentName(item) || ''),
+                String(item.id || item.war_id || item.rank_id || item.rankedwarid || '')
+            ].join('|');
+            if (seenKeys[key]) return;
+            seenKeys[key] = 1;
+            uniqueWars.push(item);
+        });
+        var wars = uniqueWars;
         var now = Date.now();
         var paired = null;
         var live = null;
@@ -246,7 +307,7 @@
                     active: false,
                     opponentName: '',
                     startAt: '',
-                    statusText: 'War Stack hidden. Ranked wars API access was not available.'
+                    statusText: 'War Stack hidden. Ranked wars API access was not available' + (data && data.error && data.error.code ? ' (error ' + data.error.code + ')' : '') + '.'
                 }, forceRender);
                 return data;
             }
