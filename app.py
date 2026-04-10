@@ -179,6 +179,22 @@ def verify_faction_member(auth_or_payload: dict[str, Any]):
     }, None
 
 
+def verify_any_logged_in_user(auth_or_payload: dict[str, Any]):
+    auth_or_payload = auth_or_payload or {}
+    admin_key = normalize_text(auth_or_payload.get("admin_api_key") or auth_or_payload.get("api_key"))
+    if not admin_key:
+        return None, "missing api key"
+
+    user, err = verify_admin_by_key(admin_key)
+    if user:
+        return user, None
+
+    return verify_faction_member({
+        "api_key": admin_key,
+        "faction_id": normalize_text(auth_or_payload.get("faction_id")) or FACTION_ID,
+    })
+
+
 def clean_claim_payload(claim: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
     existing = existing or {}
     created_at = normalize_text(existing.get("createdAt")) or now_iso()
@@ -306,6 +322,32 @@ def pull_claims():
         status=status or None,
     )
     return jsonify({"ok": True, "claims": data})
+
+
+@app.route("/api/overview/financial-summary", methods=["POST", "OPTIONS"])
+def overview_financial_summary():
+    if request.method == "OPTIONS":
+        return ok_options()
+
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+
+    summary = claims.get_financial_summary()
+    return jsonify({
+        "ok": True,
+        "summary": summary,
+        "viewer": {
+            "player_id": user["player_id"],
+            "name": user["name"],
+            "role": user["role"],
+        },
+    })
 
 
 @app.route("/api/claims/history", methods=["POST", "OPTIONS"])
