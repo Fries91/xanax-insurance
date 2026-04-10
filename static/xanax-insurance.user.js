@@ -83,6 +83,24 @@
         return Math.max(0, parseIsoOrLocalTimestamp(warStackState && warStackState.startAt) - Date.now());
     }
 
+    function getWarStackCountdownLabel() {
+        if (!warStackState || !warStackState.startAt) return 'Unknown';
+        if (warStackState.active) return 'War is live';
+        return formatDurationMs(getWarStackCountdownMs());
+    }
+
+    function canArmWarPlan(plan) {
+        return String(plan || '') !== 'Greed Sin' || isWarStackTabAvailable();
+    }
+
+    function getWarPlanStatusText(plan) {
+        if (String(plan || '') !== 'Greed Sin') return 'Standard plan';
+        if (isPlanArmedActive('Greed Sin')) return 'Greed Sin active';
+        if (warStackState && warStackState.active) return 'War already started';
+        if (warStackState && warStackState.visible) return 'Ready to arm';
+        return (warStackState && warStackState.statusText) || 'Waiting for paired war';
+    }
+
     function getWarStackButtonLabel() {
         return TAB_LABELS.warstack || '⚔️War Stack🛡️';
     }
@@ -572,9 +590,11 @@
     function updateArmedCountdownDisplay() {
         var active = refreshArmedPlanState();
         var countdownEls = document.querySelectorAll('#si-7ds-armed-countdown');
-        if (!countdownEls.length) return;
         var textValue = active ? formatDurationMs(getArmedCountdownMs()) : 'Expired';
         countdownEls.forEach(function (el) { el.textContent = textValue; });
+        var warEls = document.querySelectorAll('#si-7ds-war-start-countdown');
+        var warText = getWarStackCountdownLabel();
+        warEls.forEach(function (el) { el.textContent = warText; });
     }
 
     function startArmedCountdownWatch() {
@@ -2400,6 +2420,9 @@
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">War Stack Plans</div>'
                 +   '<div class="si-7ds-text">This row is only active before paired war starts. Use it to arm war-only plans and keep the same claim verification flow.</div>'
+                +   '<div class="si-7ds-text"><strong>War status:</strong> ' + esc((warStackState && warStackState.statusText) || 'Waiting for paired war') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Opponent:</strong> ' + esc((warStackState && warStackState.opponentName) || 'Unknown') + '</div>'
+                +   '<div class="si-7ds-text"><strong>War starts in:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
                 + '</div>'
                 + '<div class="si-7ds-plan-box">'
                 +   '<div class="si-7ds-plan-top">'
@@ -2419,14 +2442,19 @@
                 +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh War</button>'
                 +   '</div>'
                 + '</div>'
-                + '<div class="si-7ds-selected-banner">Selected war plan: <strong>' + (selectedPlan || 'None') + '</strong></div>'
+                + '<div class="si-7ds-selected-banner">Selected war plan: <strong>' + esc(selectedPlan || 'None') + '</strong></div>'
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">War Plan Verification</div>'
                 +   '<div class="si-7ds-text"><strong>Required payment:</strong> ' + esc(getPlanVerificationConfig(selectedPlan || 'Greed Sin', '').paymentDisplay || '1 Xanax') + '</div>'
                 +   '<div class="si-7ds-text"><strong>Reward:</strong> 2 Feathery Hotel Coupons</div>'
-                +   '<div class="si-7ds-text"><strong>Arm status:</strong> ' + esc(getArmedPlanDisplayName()) + '</div>'
-                +   '<div class="si-7ds-text"><strong>Window remaining:</strong> <span id="si-7ds-armed-countdown">' + esc(isPlanArmedActive() ? formatDurationMs(getArmedCountdownMs()) : 'Expired') + '</span></div>'
-                +   '<div class="si-7ds-text"><strong>Auto detect:</strong> ' + esc(autoDetectStatus || 'Idle') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Arm status:</strong> ' + esc(getWarPlanStatusText('Greed Sin')) + '</div>'
+                +   '<div class="si-7ds-text"><strong>Window remaining:</strong> <span id="si-7ds-armed-countdown">' + esc(isPlanArmedActive('Greed Sin') ? formatDurationMs(getArmedCountdownMs()) : 'Expired') + '</span></div>'
+                +   '<div class="si-7ds-text"><strong>Energy at arm:</strong> ' + esc(planActivationEnergy || 'Not captured yet') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Booster CD at arm:</strong> ' + esc(planActivationBoosterCd || 'Not captured yet') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Auto detect:</strong> ' + esc(autoDetectStatus || 'Idle') + (autoOdDetectedAt ? ' | Last hit: ' + esc(autoOdDetectedAt) : '') + '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="stop-armed-plan">Stop Plan</button>'
+                +   '</div>'
                 + '</div>';
         }
 
@@ -2833,6 +2861,11 @@
             btn.addEventListener('click', function () {
                 selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
                 saveSession();
+                if (!canArmWarPlan(selectedPlan)) {
+                    window.alert('Greed Sin can only be armed while a paired war is pending and before war starts.');
+                    refreshWarStackState(true);
+                    return;
+                }
                 armPlanSnapshot(selectedPlan, btn.getAttribute('data-stage') || '');
             });
         });
