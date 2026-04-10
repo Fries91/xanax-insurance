@@ -470,6 +470,31 @@
         return '—';
     }
 
+    function getPlanVerificationConfig(plan, stage) {
+        var p = String(plan || '').trim();
+        if (p === 'Wrath Sin') {
+            var wrath = getWrathStageConfig(stage || planActivationStage || '1');
+            return {
+                paymentItem: 'Xanax',
+                paymentQty: String(parseInt(String(wrath.paymentQty || '5').replace(/[^0-9]/g, ''), 10) || 5),
+                paymentDisplay: wrath.paymentQty,
+                rewardDisplay: wrath.expectedLoss,
+                stackText: wrath.stack,
+                stage: wrath.stage || '1'
+            };
+        }
+        if (p === 'Pride Sin') {
+            return { paymentItem: 'Xanax', paymentQty: '2', paymentDisplay: '2 Xanax', rewardDisplay: '6 Xanax', stackText: 'single', stage: '' };
+        }
+        if (p === 'Envy Sin') {
+            return { paymentItem: 'Xanax', paymentQty: '10', paymentDisplay: '10 Xanax', rewardDisplay: 'Premium payout', stackText: 'full happy jump', stage: '' };
+        }
+        if (p === 'Greed Sin') {
+            return { paymentItem: 'Xanax', paymentQty: '1', paymentDisplay: '1 Xanax', rewardDisplay: '2 Feathery Hotel Coupons', stackText: 'greed', stage: '' };
+        }
+        return { paymentItem: '', paymentQty: '', paymentDisplay: '—', rewardDisplay: '', stackText: '', stage: '' };
+    }
+
     function parseIsoOrLocalTimestamp(raw) {
         if (!raw) return 0;
         if (typeof raw === 'number') return raw;
@@ -1119,6 +1144,7 @@
         if (!claimId) return;
         var items = getClaimsDbItems();
         var idx = items.findIndex(function (item) { return item && item.id === claimId; });
+        var verification = getPlanVerificationConfig(selectedPlan, planActivationStage);
         var rec = {
             id: claimId,
             plan: selectedPlan || 'None',
@@ -1130,6 +1156,8 @@
             payout: payoutAmount || '',
             decision: decisionNote || '',
             member: sessionName || 'Guest',
+            requiredPaymentItem: verification.paymentItem || '',
+            requiredPaymentQty: verification.paymentQty || '',
             updatedAt: new Date().toLocaleString()
         };
         if (idx >= 0) items[idx] = rec;
@@ -1290,6 +1318,7 @@
             ? 'admin_update'
             : (isMember() ? 'member_submit' : 'guest');
 
+        var verification = getPlanVerificationConfig(selectedPlan, planActivationStage);
         var payload = {
             secret: syncSecret,
             action: action,
@@ -1305,6 +1334,8 @@
                 payout: payoutAmount || '',
                 decision: decisionNote || '',
                 member: sessionName || 'Guest',
+                requiredPaymentItem: verification.paymentItem || '',
+                requiredPaymentQty: verification.paymentQty || '',
                 updatedAt: new Date().toLocaleString()
             }
         };
@@ -1511,9 +1542,9 @@
     function getPlanRuleText(plan) {
         var p = String(plan || '');
         if (p === 'Pride Sin') return 'single xanax / 1st use only';
-        if (p === 'Greed Sin') return '0-150 energy only';
         if (p === 'Wrath Sin') return '1st, 2nd, 3rd, 4th stack only';
         if (p === 'Envy Sin') return 'full happy jump only';
+        if (p === 'Greed Sin') return 'war stack / 0 to 150 energy';
         return 'select a plan first';
     }
 
@@ -1523,14 +1554,14 @@
         if (plan === 'Pride Sin') {
             return t.indexOf('single') >= 0 || t.indexOf('1st') >= 0 || t.indexOf('first') >= 0 || t === '1';
         }
-        if (plan === 'Greed Sin') {
-            return t.indexOf('war') >= 0 || t.indexOf('stack') >= 0 || t.indexOf('greed') >= 0;
-        }
         if (plan === 'Wrath Sin') {
             return t.indexOf('1st') >= 0 || t.indexOf('2nd') >= 0 || t.indexOf('3rd') >= 0 || t.indexOf('4th') >= 0 || t.indexOf('first') >= 0 || t.indexOf('second') >= 0 || t.indexOf('third') >= 0 || t.indexOf('fourth') >= 0;
         }
         if (plan === 'Envy Sin') {
             return t.indexOf('full') >= 0 || t.indexOf('happy jump') >= 0;
+        }
+        if (plan === 'Greed Sin') {
+            return t.indexOf('greed') >= 0 || t.indexOf('war') >= 0 || t.indexOf('stack') >= 0 || t.indexOf('0-150') >= 0 || t.indexOf('0 to 150') >= 0 || /^150?$/.test(t);
         }
         return false;
     }
@@ -1538,9 +1569,9 @@
     function getPayoutGuide(plan) {
         var p = String(plan || '');
         if (p === 'Pride Sin') return 'Guide: small single-use payout';
-        if (p === 'Greed Sin') return 'Guide: war reward plan';
         if (p === 'Wrath Sin') return 'Guide: medium stacked-use payout';
         if (p === 'Envy Sin') return 'Guide: premium full-jump payout';
+        if (p === 'Greed Sin') return 'Guide: 2 Feathery Hotel Coupons reward';
         return 'Guide: no plan selected';
     }
 
@@ -2265,35 +2296,6 @@
     }
 
     function renderTabContent() {
-        if (activeTab === 'warstack') {
-            return ''
-                + '<div class="si-7ds-card">'
-                +   '<div class="si-7ds-card-title">⚔️ War Stack Plans</div>'
-                +   '<div class="si-7ds-text">Use this tab during paired war prep. It hides automatically once the war starts.</div>'
-                + '</div>'
-
-                + '<div class="si-7ds-plan-box">'
-                +   '<div class="si-7ds-plan-top">'
-                +     '<div><div class="si-7ds-plan-name">Greed Sin</div><div class="si-7ds-plan-tier">War stack reward plan</div></div>'
-                +     '<span class="si-7ds-pill">War-only plan</span>'
-                +   '</div>'
-                +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">1 Xanax</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">0-150 energy</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Reward</div><div class="si-7ds-plan-stat-value">2 Feathery Hotel Coupons</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Type</div><div class="si-7ds-plan-stat-value">Pre-war stack</div></div>'
-                +   '</div>'
-                +   '<div class="si-7ds-plan-actions">'
-                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Greed Sin">Select</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Greed Sin">Terms</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh War</button>'
-                +   '</div>'
-                + '</div>'
-
-                + '<div class="si-7ds-selected-banner">Selected plan: <strong>' + esc(selectedPlan || 'None') + '</strong></div>';
-
-        }
-
         if (activeTab === 'overview') {
             var overviewStats = getOverviewStats();
             return ''
@@ -2390,6 +2392,41 @@
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="stop-armed-plan">Stop Plan</button>'
                 +   '</div>'
+                + '</div>';
+        }
+
+        if (activeTab === 'warstack') {
+            return ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">War Stack Plans</div>'
+                +   '<div class="si-7ds-text">This row is only active before paired war starts. Use it to arm war-only plans and keep the same claim verification flow.</div>'
+                + '</div>'
+                + '<div class="si-7ds-plan-box">'
+                +   '<div class="si-7ds-plan-top">'
+                +     '<div><div class="si-7ds-plan-name">Greed Sin</div><div class="si-7ds-plan-tier">War stack coverage</div></div>'
+                +     '<span class="si-7ds-pill">War only</span>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-grid">'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">1 Xanax</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">0-150 energy</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Reward</div><div class="si-7ds-plan-stat-value">2 Feathery Hotel Coupons</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">30 mins</div></div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Greed Sin">Select</button>'
+                +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Greed Sin') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Greed Sin">' + (isPlanArmedActive('Greed Sin') ? 'Greed Active' : 'Activate Greed') + '</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Greed Sin">Terms</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh War</button>'
+                +   '</div>'
+                + '</div>'
+                + '<div class="si-7ds-selected-banner">Selected war plan: <strong>' + (selectedPlan || 'None') + '</strong></div>'
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">War Plan Verification</div>'
+                +   '<div class="si-7ds-text"><strong>Required payment:</strong> ' + esc(getPlanVerificationConfig(selectedPlan || 'Greed Sin', '').paymentDisplay || '1 Xanax') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Reward:</strong> 2 Feathery Hotel Coupons</div>'
+                +   '<div class="si-7ds-text"><strong>Arm status:</strong> ' + esc(getArmedPlanDisplayName()) + '</div>'
+                +   '<div class="si-7ds-text"><strong>Window remaining:</strong> <span id="si-7ds-armed-countdown">' + esc(isPlanArmedActive() ? formatDurationMs(getArmedCountdownMs()) : 'Expired') + '</span></div>'
+                +   '<div class="si-7ds-text"><strong>Auto detect:</strong> ' + esc(autoDetectStatus || 'Idle') + '</div>'
                 + '</div>';
         }
 
@@ -2694,7 +2731,7 @@
             +   '<div class="si-7ds-card-title">What Sinner\'s Insurance Does For You</div>'
             +   '<div class="si-7ds-list">'
             +     '<div class="si-7ds-list-item">Protects eligible OD losses during active plan windows.</div>'
-            +     '<div class="si-7ds-list-item">Lets you arm Pride, Wrath, or Envy coverage right from the overlay.</div>'
+            +     '<div class="si-7ds-list-item">Lets you arm Pride, Wrath, Envy, or Greed coverage right from the overlay.</div>'
             +     '<div class="si-7ds-list-item">Shows your login status and tracks OD watch while your plan is active.</div>'
             +   '</div>'
             + '</div>'
@@ -2728,9 +2765,6 @@
         }
         if (plan === 'Wrath Sin') {
             bodyText = '(Start with 0 energy. Can combine with Envy plan)';
-        }
-        if (plan === 'Greed Sin') {
-            bodyText = '(Payment: 1 Xanax. Terms: 0-150 energy. Reward: 2 Feathery Hotel Coupons.)';
         }
         if (plan === 'Envy Sin') {
             bodyText = '(Full stack, 0 booster CD, take 4 E-DVD\'s, then take Ecstasy! Combinable with Wrath for Xanax coverage.)';
