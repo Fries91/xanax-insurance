@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.9.2
+// @version      2.9.3
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -76,7 +76,7 @@
         claims: 'Claims',
         admin: 'Admin',
         settings: 'Settings',
-        warstack: '⚔️War Stack🛡️'
+        warstack: '⚔️War🛡️'
     };
 
 
@@ -94,18 +94,17 @@
     }
 
     function canArmWarPlan(plan) {
-        return String(plan || '') !== 'Greed Sin' || isWarStackTabAvailable();
+        return true;
     }
 
     function getWarPlanStatusText(plan) {
         if (String(plan || '') !== 'Greed Sin') return 'Standard plan';
         if (isPlanArmedActive('Greed Sin')) return 'Greed Sin active';
-        if (warStackState && warStackState.visible) return 'Ready to arm';
-        return (warStackState && warStackState.statusText) || 'War Stack is inactive';
+        return (warStackState && warStackState.enabled) ? 'War tab active' : 'War tab inactive';
     }
 
     function getWarStackButtonLabel() {
-        return TAB_LABELS.warstack || '⚔️War Stack🛡️';
+        return TAB_LABELS.warstack || '⚔️War🛡️';
     }
 
     function getTornFactionRankedWars(apiKey) {
@@ -182,7 +181,249 @@
                         active: false,
                         opponentName: extractOpponentName(item),
                         startAt: new Date(startMs).toLocaleString(),
-                        statusText: 'Paired war found. War Stack is active until the war starts.',
+                        statusText: 'Paired war found. War tab is active until the war starts.',
+                        source: item,
+                        startMs: startMs
+                    };
+                }
+                return;
+            }
+            if (startMs <= now && (!endMs || endMs > now)) {
+                if (!live || startMs > live.startMs) {
+                    live = {
+                        visible: false,
+                        active: true,
+                        opponentName: extractOpponentName(item),
+                        startAt: new Date(startMs).toLocaleString(),
+                        statusText: 'War has started. War tab is now locked.',
+                        source: item,
+                        startMs: startMs
+                    };
+                }
+            }
+        });
+
+        if (paired) return paired;
+        if (live) return live;
+        return {
+            visible: false,
+            active: false,
+            opponentName: '',
+            startAt: '',
+            statusText: 'No paired war detected.',
+            startMs: 0
+        };
+    }
+
+    function updateWarStackState(nextState, forceRender) {
+        warStackState = {
+            enabled: !!(nextState && (nextState.enabled || nextState.visible)),
+            visible: !!(nextState && (nextState.visible || nextState.enabled)),
+            active: !!(nextState && nextState.active),
+            opponentName: String(nextState && nextState.opponentName || ''),
+            startAt: String(nextState && nextState.startAt || ''),
+            statusText: String(nextState && nextState.statusText || ''),
+            updatedAt: String(nextState && nextState.updatedAt || ''),
+            updatedBy: String(nextState && nextState.updatedBy || ''),
+            checkedAt: new Date().toLocaleString()
+        };
+        if (activeTab === 'warstack' && !isWarStackTabAvailable()) activeTab = 'overview';
+        saveSession();
+        if (forceRender && overlay) renderOverlay();
+    }
+
+    function refreshWarStackState(forceRender) {
+        if (!memberApiKey || !syncSecret || !apiBase) {
+            updateWarStackState({
+                enabled: false,
+                visible: false,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: 'Log in to load War tab state.'
+            }, forceRender);
+            return Promise.resolve(null);
+        }
+
+        return apiRequest('POST', '/api/warstack/state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            var serverState = data && data.state ? data.state : {};
+            updateWarStackState({
+                enabled: !!serverState.enabled,
+                visible: !!serverState.enabled,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: serverState.enabled ? 'War tab is active for the faction.' : 'War tab is inactive for the faction.',
+                updatedAt: String(serverState.updatedAt || ''),
+                updatedBy: String(serverState.updatedBy || '')
+            }, forceRender);
+            return data;
+        }).catch(function () {
+            updateWarStackState({
+                enabled: false,
+                visible: false,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: 'War tab state check failed.'
+            }, forceRender);
+            return null;
+        });
+    }
+
+    function setWarStackServerState(enabled) {
+        if (!memberApiKey || !syncSecret || !apiBase) {
+            window.alert('Log in first to change War tab state.');
+            return Promise.resolve(null);
+        }
+        return apiRequest('POST', '/api/warstack/set-state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload(),
+            enabled: !!enabled
+        }).then(function (data) {
+            if (!data || !data.ok) {
+                window.alert((data && data.error) || 'Could not update War tab state.');
+                return data;
+            }
+            return refreshWarStackState(true).then(function () { return data; });
+        }).catch(function () {
+            window.alert('Could not update War tab state.');
+            return null;
+        });
+    }
+
+    function refreshFinancialSummary(forceRender) {
+        if (!memberApiKey || !syncSecret || !apiBase) {
+            return Promise.resolve(null);
+        }
+        return apiRequest('POST', '/api/overview/financial-summary', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            if (data && data.ok && data.summary) {
+                financialSummary = data.summary || {};
+                saveSession();
+                if (forceRender && overlay) renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            return null;
+        });
+    }
+
+    function startWarStackWatch() {
+        if (warStackTimer) clearInterval(warStackTimer);
+        warStackTimer = null;
+        refreshWarStackState(true).catch(function () {});
+        refreshFinancialSummary(false).catch(function () {});
+        warStackTimer = setInterval(function () {
+            refreshWarStackState(true).catch(function () {});
+            refreshFinancialSummary(false).catch(function () {});
+        }, 60000);
+    }
+
+    function getVisibleTabKeys() {
+        return isAdmin()
+            ? ['overview', 'plans', 'claims', 'admin', 'settings']
+            : ['overview', 'plans', 'claims', 'settings'];
+    }
+
+    var ADMIN_USER_IDS = ['3679030'];
+
+    function esc(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function saveSession() {
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_selected_plan', selectedPlan || 'None');
+            GM_setValue('si_session_role', sessionRole || 'guest');
+            GM_setValue('si_session_name', sessionName || 'Guest');
+            GM_setValue('si_claim_status', claimStatus || 'Not submitted');
+            GM_setValue('si_claim_note', claimNote || '');
+            GM_setValue('si_claim_loss', claimLoss || '');
+            GM_setValue('si_claim_proof', claimProof || '');
+            GM_setValue('si_claim_stack', claimStack || '');
+            GM_setValue('si_claim_history', claimHistory || '[]');
+            GM_setValue('si_claim_id', claimId || '');
+            GM_setValue('si_payout_amount', payoutAmount || '');
+            GM_setValue('si_decision_note', decisionNote || '');
+            GM_setValue('si_claims_db', claimsDb || '[]');
+            GM_setValue('si_selected_claim_id', selectedClaimId || '');
+            GM_setValue('si_claim_filter_status', claimFilterStatus || 'all');
+            GM_setValue('si_claim_filter_member', claimFilterMember || '');
+            GM_setValue('si_claim_sort_mode', claimSortMode || 'newest');
+            GM_setValue('si_api_base', apiBase || '');
+            GM_setValue('si_sync_secret', syncSecret || '');
+            GM_setValue('si_backend_status', backendStatus || 'Not tested');
+            GM_setValue('si_last_sync_at', lastSyncAt || 'Never');
+            GM_setValue('si_server_claim_history', serverClaimHistory || '[]');
+            GM_setValue('si_last_admin_notice_claim_ids', lastAdminNoticeClaimIds || '[]');
+            GM_setValue('si_auto_detect_status', autoDetectStatus || 'Idle');
+            GM_setValue('si_auto_od_fingerprint', autoOdFingerprint || '');
+            GM_setValue('si_auto_od_detected_at', autoOdDetectedAt || '');
+            GM_setValue('si_admin_notify_enabled', !!adminNotifyEnabled);
+            GM_setValue('si_auth_user', authUser || '');
+            GM_setValue('si_auth_pass', authPass || '');
+            GM_setValue('si_member_api_key', memberApiKey || '');
+            GM_setValue('si_faction_id_lock', factionIdLock || '');
+            GM_setValue('si_auth_mode', authMode || 'local');
+            GM_setValue('si_plan_activation_at', planActivationAt || '');
+            GM_setValue('si_plan_activation_plan', planActivationPlan || '');
+            GM_setValue('si_plan_activation_stage', planActivationStage || '');
+            GM_setValue('si_plan_activation_energy', planActivationEnergy || '');
+            GM_setValue('si_plan_activation_booster_cd', planActivationBoosterCd || '');
+            GM_setValue('si_plan_activation_expires_at', planActivationExpiresAt || '');
+            GM_setValue('si_war_stack_state', JSON.stringify(warStackState || {}));
+            GM_setValue('si_financial_summary', JSON.stringify(financialSummary || {}));
+        }
+    }
+
+    function isAdmin() {
+        return sessionRole === 'admin';
+    }
+
+    function isMember() {
+        return sessionRole === 'member' || sessionRole === 'admin';
+    }
+
+    function parseJsonArraySafe(raw) {
+        try {
+            var arr = JSON.parse(raw || '[]');
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function sendAdminNotification(title, text) {
+        var body = String(text || '');
+        try {
+            if (typeof GM_notification === 'function') {
+                GM_notification({
+                    title: String(title || 'Sinner\'s Insurance'),
+                    text: body,
+                    timeout: 12000
+                });
+                return;
+            }
+        } catch (e) {}
+        try {
+            if (typeof Notification !== 'undefined') {
+                if (Notification.permission === 'granted') {
+                    new Notification(String(title || 'Sinner\'s Insurance'), { body: body });
+                    return;
+                }
+                if (Notification.permission !== 'denied') {
+                    Notification.requestPermission().th War Stack is active until the war starts.',
                         source: item,
                         startMs: startMs
                     };
