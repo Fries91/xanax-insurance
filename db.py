@@ -85,6 +85,17 @@ class ClaimsStore(BaseStore):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_member_id ON claims(memberId)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_is_read ON claims(isRead)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_updated_at ON claims(updatedAt)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL DEFAULT '',
+                    updatedAt TEXT NOT NULL DEFAULT '',
+                    updatedBy TEXT NOT NULL DEFAULT '',
+                    updatedById TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
             conn.commit()
 
             needed = {
@@ -375,6 +386,57 @@ class ClaimsStore(BaseStore):
             'admin_payout_verified_count': payout_verified_count,
             'plan_totals': dict(sorted(plan_totals.items())),
         }
+
+    def get_setting(self, key: str, default: str = "") -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT key, value, updatedAt, updatedBy, updatedById FROM app_settings WHERE key = ?",
+                (str(key),),
+            ).fetchone()
+            if not row:
+                return {
+                    "key": str(key),
+                    "value": default,
+                    "updatedAt": "",
+                    "updatedBy": "",
+                    "updatedById": "",
+                }
+            return dict(row)
+
+    def set_setting(self, key: str, value: str, updated_by: str = "", updated_by_id: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO app_settings (key, value, updatedAt, updatedBy, updatedById)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    updatedAt=excluded.updatedAt,
+                    updatedBy=excluded.updatedBy,
+                    updatedById=excluded.updatedById
+                """,
+                (str(key), str(value), now_iso(), str(updated_by or ""), str(updated_by_id or "")),
+            )
+            conn.commit()
+
+    def get_warstack_state(self) -> dict[str, Any]:
+        row = self.get_setting("warstack_enabled", "0")
+        value = str(row.get("value", "0")).strip().lower()
+        enabled = 1 if value in {"1", "true", "yes", "on"} else 0
+        return {
+            "enabled": enabled,
+            "updatedAt": str(row.get("updatedAt", "")),
+            "updatedBy": str(row.get("updatedBy", "")),
+            "updatedById": str(row.get("updatedById", "")),
+        }
+
+    def set_warstack_state(self, enabled: int | bool, updated_by: str = "", updated_by_id: str = "") -> None:
+        self.set_setting(
+            "warstack_enabled",
+            "1" if int(enabled or 0) else "0",
+            updated_by=updated_by,
+            updated_by_id=updated_by_id,
+        )
 
 
 class ClaimHistoryStore(BaseStore):
