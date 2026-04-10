@@ -42,6 +42,9 @@
     var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '6282') : '6282');
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
     var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
+    var overviewFinancialSummary = (typeof GM_getValue === 'function' ? GM_getValue('si_overview_financial_summary', '{}') : '{}');
+    var overviewFinancialSummaryAt = (typeof GM_getValue === 'function' ? GM_getValue('si_overview_financial_summary_at', '') : '');
+    var overviewFinancialSummaryPending = false;
     var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
     var lastAdminNoticeClaimIds = (typeof GM_getValue === 'function' ? GM_getValue('si_last_admin_notice_claim_ids', '[]') : '[]');
     var autoDetectStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_auto_detect_status', 'Idle') : 'Idle');
@@ -295,6 +298,8 @@
             GM_setValue('si_sync_secret', syncSecret || '');
             GM_setValue('si_backend_status', backendStatus || 'Not tested');
             GM_setValue('si_last_sync_at', lastSyncAt || 'Never');
+            GM_setValue('si_overview_financial_summary', overviewFinancialSummary || '{}');
+            GM_setValue('si_overview_financial_summary_at', overviewFinancialSummaryAt || '');
             GM_setValue('si_server_claim_history', serverClaimHistory || '[]');
             GM_setValue('si_last_admin_notice_claim_ids', lastAdminNoticeClaimIds || '[]');
             GM_setValue('si_auto_detect_status', autoDetectStatus || 'Idle');
@@ -944,6 +949,7 @@
             lastSyncAt = new Date().toLocaleString();
             saveSession();
             renderOverlay();
+            syncOverviewFinancialSummaryFromBackend(true);
             startAdminClaimNotifications();
             startMemberAutoDetection();
             startWarStackWatch();
@@ -1261,6 +1267,7 @@
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
+                syncOverviewFinancialSummaryFromBackend(false);
             }
             return data;
         }).catch(function (err) {
@@ -1483,16 +1490,75 @@
         return 0;
     }
 
-    function getOverviewStats() {
+    
+    function getStoredOverviewFinancialSummary() {
+        try {
+            var parsed = JSON.parse(overviewFinancialSummary || '{}');
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function getOverviewSummaryNumber(summary, key, fallback) {
+        var value = summary && summary[key];
+        var num = Number(value);
+        return isFinite(num) ? num : fallback;
+    }
+
+    function syncOverviewFinancialSummaryFromBackend(force) {
+        if (overviewFinancialSummaryPending && !force) return Promise.resolve(getStoredOverviewFinancialSummary());
+        if (!apiBase || !syncSecret) return Promise.resolve(null);
+        if (!memberApiKey) return Promise.resolve(null);
+
+        overviewFinancialSummaryPending = true;
+        return apiRequest('POST', '/api/overview/financial-summary', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            overviewFinancialSummaryPending = false;
+            if (data && data.ok && data.summary) {
+                overviewFinancialSummary = JSON.stringify(data.summary || {});
+                overviewFinancialSummaryAt = new Date().toISOString();
+                saveSession();
+                renderOverlay();
+                return data.summary;
+            }
+            return null;
+        }).catch(function (err) {
+            overviewFinancialSummaryPending = false;
+            return null;
+        });
+    }
+
+    function ensureOverviewFinancialSummaryFresh() {
+        if (!memberApiKey || !apiBase || !syncSecret) return;
+        var ageMs = 0;
+        if (overviewFinancialSummaryAt) {
+            var parsed = Date.parse(overviewFinancialSummaryAt);
+            if (!isNaN(parsed)) ageMs = Date.now() - parsed;
+        } else {
+            ageMs = Number.MAX_SAFE_INTEGER;
+        }
+        if (ageMs > 5 * 60 * 1000) {
+            syncOverviewFinancialSummaryFromBackend(false);
+        }
+    }
+
+function getOverviewStats() {
         var items = getClaimsDbItems();
         var verifiedItems = items.filter(function (i) {
             var status = String(i && i.status || '');
             return ['Paid', 'Under review', 'Pending review'].indexOf(status) >= 0;
         });
-        var totalXanaxReceived = verifiedItems.reduce(function (sum, i) {
+        var fallbackTotalXanaxReceived = verifiedItems.reduce(function (sum, i) {
             return sum + inferPlanPaymentQty(i);
         }, 0);
-        var factionShare = totalXanaxReceived * 0.15;
+        var fallbackFactionShare = fallbackTotalXanaxReceived * 0.15;
+        var summary = getStoredOverviewFinancialSummary();
+        var totalXanaxReceived = getOverviewSummaryNumber(summary, 'verified_xanax_in', fallbackTotalXanaxReceived);
+        var factionShare = getOverviewSummaryNumber(summary, 'faction_cut_xanax', fallbackFactionShare);
+        var insurancePool = getOverviewSummaryNumber(summary, 'insurance_pool_xanax', totalXanaxReceived - factionShare);
         return {
             total: items.length,
             open: items.filter(function (i) { return ['Pending review', 'Under review'].indexOf(String(i && i.status || '')) >= 0; }).length,
@@ -1502,7 +1568,8 @@
             members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length,
             totalXanaxReceived: totalXanaxReceived,
             factionShare: factionShare,
-            insurancePool: totalXanaxReceived - factionShare
+            insurancePool: insurancePool,
+            summarySource: summary && Object.keys(summary).length ? 'backend' : 'local'
         };
     }
 
@@ -2259,6 +2326,7 @@
 
     function renderTabContent() {
         if (activeTab === 'overview') {
+            ensureOverviewFinancialSummaryFresh();
             var overviewStats = getOverviewStats();
             return ''
                 + '<div class="si-7ds-card">'
@@ -2274,7 +2342,7 @@
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.factionShare * 100) / 100) + '</div><div class="si-7ds-summary-label">Faction 15% Cut</div></div>'
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.insurancePool * 100) / 100) + '</div><div class="si-7ds-summary-label">Insurance Pool 85%</div></div>'
                 +   '</div>'
-                +   '<div class="si-7ds-text" style="margin-top:12px;">15% of verified Xanax plan payments goes to faction. This currently totals from synced claim records using plan/stage amounts.</div>'
+                +   '<div class="si-7ds-text" style="margin-top:12px;">' + (overviewStats.summarySource === 'backend' ? '15% of verified Xanax plan payments goes to faction. These totals are pulled from verified backend receipts.' : '15% of verified Xanax plan payments goes to faction. Backend totals are not loaded yet, so this is using synced local claim estimates.') + '</div>'
                 + '</div>';
         }
 
