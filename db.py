@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -303,6 +304,77 @@ class ClaimsStore(BaseStore):
                 (1 if is_notified else 0, notified_at or "", now_iso(), claim_id),
             )
             conn.commit()
+
+    @staticmethod
+    def _qty_to_int(value: Any) -> int:
+        text = str(value or '').strip()
+        if not text:
+            return 0
+        match = re.search(r'-?\d+', text.replace(',', ''))
+        return int(match.group(0)) if match else 0
+
+    def get_financial_summary(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    member,
+                    memberId,
+                    plan,
+                    status,
+                    requiredPaymentItem,
+                    requiredPaymentQty,
+                    memberPaymentVerified,
+                    adminReceiptVerified,
+                    adminPayoutVerified,
+                    updatedAt,
+                    createdAt
+                FROM claims
+                ORDER BY updatedAt DESC, rowid DESC
+                """
+            ).fetchall()
+
+        total_verified_xanax = 0
+        verified_receipts_count = 0
+        member_verified_count = 0
+        payout_verified_count = 0
+        plan_totals: dict[str, int] = {}
+
+        for row in rows:
+            item = str(row['requiredPaymentItem'] or '').strip().lower()
+            qty = self._qty_to_int(row['requiredPaymentQty'])
+            if item != 'xanax' or qty <= 0:
+                continue
+
+            plan_name = str(row['plan'] or 'Unknown').strip() or 'Unknown'
+
+            if int(row['memberPaymentVerified'] or 0):
+                member_verified_count += 1
+
+            if int(row['adminPayoutVerified'] or 0):
+                payout_verified_count += 1
+
+            if not int(row['adminReceiptVerified'] or 0):
+                continue
+
+            verified_receipts_count += 1
+            total_verified_xanax += qty
+            plan_totals[plan_name] = plan_totals.get(plan_name, 0) + qty
+
+        faction_share = round(total_verified_xanax * 0.15, 2)
+        insurance_pool = round(total_verified_xanax - faction_share, 2)
+
+        return {
+            'verified_xanax_in': total_verified_xanax,
+            'faction_cut_percent': 15,
+            'faction_cut_xanax': faction_share,
+            'insurance_pool_xanax': insurance_pool,
+            'verified_receipts_count': verified_receipts_count,
+            'member_payment_verified_count': member_verified_count,
+            'admin_payout_verified_count': payout_verified_count,
+            'plan_totals': dict(sorted(plan_totals.items())),
+        }
 
 
 class ClaimHistoryStore(BaseStore):
