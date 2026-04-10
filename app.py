@@ -19,6 +19,7 @@ FACTION_ID = str(os.getenv("FACTION_ID", "")).strip()
 ADMIN_PLAYER_ID = str(os.getenv("ADMIN_PLAYER_ID", "")).strip()
 TORN_API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
+WARSTACK_MANAGER_IDS = {x.strip() for x in str(os.getenv("WARSTACK_MANAGER_IDS", "")).split(",") if x.strip()}
 
 
 def now_iso() -> str:
@@ -195,6 +196,32 @@ def verify_any_logged_in_user(auth_or_payload: dict[str, Any]):
     })
 
 
+
+def user_can_manage_warstack(user: dict[str, Any]) -> bool:
+    player_id = normalize_text((user or {}).get("player_id"))
+    role = normalize_text((user or {}).get("role")).lower()
+    if role == "admin":
+        return True
+    return bool(player_id and player_id in WARSTACK_MANAGER_IDS)
+
+
+def build_warstack_state(user: dict[str, Any] | None = None) -> dict[str, Any]:
+    state = claims.get_warstack_state()
+    viewer = user or {}
+    return {
+        "enabled": bool(state.get("enabled", 0)),
+        "updatedAt": state.get("updatedAt", ""),
+        "updatedBy": state.get("updatedBy", ""),
+        "updatedById": state.get("updatedById", ""),
+        "viewerCanManage": user_can_manage_warstack(viewer),
+        "viewer": {
+            "player_id": normalize_text(viewer.get("player_id")),
+            "name": normalize_text(viewer.get("name")),
+            "role": normalize_text(viewer.get("role")),
+        },
+    }
+
+
 def clean_claim_payload(claim: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
     existing = existing or {}
     created_at = normalize_text(existing.get("createdAt")) or now_iso()
@@ -347,6 +374,57 @@ def overview_financial_summary():
             "name": user["name"],
             "role": user["role"],
         },
+    })
+
+
+
+@app.route("/api/warstack/state", methods=["POST", "OPTIONS"])
+def warstack_state():
+    if request.method == "OPTIONS":
+        return ok_options()
+
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+
+    return jsonify({
+        "ok": True,
+        "warstack": build_warstack_state(user),
+    })
+
+
+@app.route("/api/warstack/set-state", methods=["POST", "OPTIONS"])
+def warstack_set_state():
+    if request.method == "OPTIONS":
+        return ok_options()
+
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+
+    if not user_can_manage_warstack(user):
+        return json_error("only configured warstack managers may change this state", 403)
+
+    enabled = normalize_bool(payload.get("enabled"))
+    claims.set_warstack_state(
+        enabled=enabled,
+        updated_by=normalize_text(user.get("name")),
+        updated_by_id=normalize_text(user.get("player_id")),
+    )
+
+    return jsonify({
+        "ok": True,
+        "warstack": build_warstack_state(user),
     })
 
 
