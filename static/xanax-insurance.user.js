@@ -75,20 +75,18 @@
     };
 
 
-    function isWarStackManager() {
-        return isAdmin();
-    }
-
     function isWarStackTabAvailable() {
-        return !!(warStackState && warStackState.visible);
+        return !!(warStackState && warStackState.visible && !warStackState.active);
     }
 
     function getWarStackCountdownMs() {
-        return 0;
+        return Math.max(0, parseIsoOrLocalTimestamp(warStackState && warStackState.startAt) - Date.now());
     }
 
     function getWarStackCountdownLabel() {
-        return isWarStackTabAvailable() ? 'Active by staff' : 'Inactive';
+        if (!warStackState || !warStackState.startAt) return 'Unknown';
+        if (warStackState.active) return 'War is live';
+        return formatDurationMs(getWarStackCountdownMs());
     }
 
     function canArmWarPlan(plan) {
@@ -98,8 +96,9 @@
     function getWarPlanStatusText(plan) {
         if (String(plan || '') !== 'Greed Sin') return 'Standard plan';
         if (isPlanArmedActive('Greed Sin')) return 'Greed Sin active';
-        if (isWarStackTabAvailable()) return 'Ready to arm';
-        return (warStackState && warStackState.statusText) || 'War Stack inactive';
+        if (warStackState && warStackState.active) return 'War already started';
+        if (warStackState && warStackState.visible) return 'Ready to arm';
+        return (warStackState && warStackState.statusText) || 'Waiting for paired war';
     }
 
     function getWarStackButtonLabel() {
@@ -217,35 +216,61 @@
     function updateWarStackState(nextState, forceRender) {
         warStackState = {
             visible: !!(nextState && nextState.visible),
-            active: false,
-            opponentName: '',
-            startAt: '',
+            active: !!(nextState && nextState.active),
+            opponentName: String(nextState && nextState.opponentName || ''),
+            startAt: String(nextState && nextState.startAt || ''),
             statusText: String(nextState && nextState.statusText || ''),
-            checkedAt: new Date().toLocaleString(),
-            toggledBy: String(nextState && nextState.toggledBy || (warStackState && warStackState.toggledBy) || '')
+            checkedAt: new Date().toLocaleString()
         };
         if (activeTab === 'warstack' && !isWarStackTabAvailable()) activeTab = 'overview';
         saveSession();
         if (forceRender && overlay) renderOverlay();
     }
 
-    function setWarStackActive(enabled) {
-        var actorLabel = sessionName || 'Staff';
-        updateWarStackState({
-            visible: !!enabled,
-            statusText: enabled ? 'War Stack is active by staff toggle.' : 'War Stack is inactive.',
-            toggledBy: actorLabel
-        }, true);
-    }
-
     function refreshWarStackState(forceRender) {
-        if (forceRender && overlay) renderOverlay();
-        return Promise.resolve(warStackState);
+        if (!memberApiKey) {
+            updateWarStackState({
+                visible: false,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: 'Add an API key to check paired wars.'
+            }, forceRender);
+            return Promise.resolve(null);
+        }
+
+        return getTornFactionRankedWars(memberApiKey).then(function (data) {
+            if (data && data.error) {
+                updateWarStackState({
+                    visible: false,
+                    active: false,
+                    opponentName: '',
+                    startAt: '',
+                    statusText: 'War Stack hidden. Ranked wars API access was not available.'
+                }, forceRender);
+                return data;
+            }
+            updateWarStackState(parseRankedWarState(data || {}), forceRender);
+            return data;
+        }).catch(function () {
+            updateWarStackState({
+                visible: false,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: 'War Stack check failed.'
+            }, forceRender);
+            return null;
+        });
     }
 
     function startWarStackWatch() {
         if (warStackTimer) clearInterval(warStackTimer);
         warStackTimer = null;
+        refreshWarStackState(true).catch(function () {});
+        warStackTimer = setInterval(function () {
+            refreshWarStackState(true).catch(function () {});
+        }, 60000);
     }
 
     function getVisibleTabKeys() {
@@ -480,7 +505,7 @@
             return { paymentItem: 'Xanax', paymentQty: '2', paymentDisplay: '2 Xanax', rewardDisplay: '6 Xanax', stackText: 'single', stage: '' };
         }
         if (p === 'Envy Sin') {
-            return { paymentItem: 'Xanax', paymentQty: '10', paymentDisplay: '10 Xanax', rewardDisplay: 'Premium payout', stackText: 'full happy jump', stage: '' };
+            return { paymentItem: 'Xanax', paymentQty: '5', paymentDisplay: '5 Xanax', rewardDisplay: '25 Xanax and 3 E-DVD\'s', stackText: '1000 energy / 0 booster cooldown', stage: '' };
         }
         if (p === 'Greed Sin') {
             return { paymentItem: 'Xanax', paymentQty: '1', paymentDisplay: '1 Xanax', rewardDisplay: '2 Feathery Hotel Coupons', stackText: 'greed', stage: '' };
@@ -1501,7 +1526,7 @@
 
         if (plan === 'Pride Sin') return 2;
         if (plan === 'Greed Sin') return 1;
-        if (plan === 'Envy Sin') return 10;
+        if (plan === 'Envy Sin') return 5;
         if (plan === 'Wrath Sin') {
             if (stack.indexOf('4') >= 0 || stack.indexOf('fourth') >= 0 || stack.indexOf('4th') >= 0 || note.indexOf('20 xanax') >= 0) return 20;
             if (stack.indexOf('3') >= 0 || stack.indexOf('third') >= 0 || stack.indexOf('3rd') >= 0 || note.indexOf('15 xanax') >= 0) return 15;
@@ -1538,7 +1563,7 @@
         var p = String(plan || '');
         if (p === 'Pride Sin') return 'single xanax / 1st use only';
         if (p === 'Wrath Sin') return '1st, 2nd, 3rd, 4th stack only';
-        if (p === 'Envy Sin') return 'full happy jump only';
+        if (p === 'Envy Sin') return 'start with 1000 energy and 0 booster cooldown';
         if (p === 'Greed Sin') return 'war stack / 0 to 150 energy';
         return 'select a plan first';
     }
@@ -1565,7 +1590,7 @@
         var p = String(plan || '');
         if (p === 'Pride Sin') return 'Guide: small single-use payout';
         if (p === 'Wrath Sin') return 'Guide: medium stacked-use payout';
-        if (p === 'Envy Sin') return 'Guide: premium full-jump payout';
+        if (p === 'Envy Sin') return 'Guide: 30 minute Envy window';
         if (p === 'Greed Sin') return 'Guide: 2 Feathery Hotel Coupons reward';
         return 'Guide: no plan selected';
     }
@@ -2293,20 +2318,7 @@
     function renderTabContent() {
         if (activeTab === 'overview') {
             var overviewStats = getOverviewStats();
-            var warStackControlCard = isWarStackManager()
-                ? '<div class="si-7ds-card">'
-                    + '<div class="si-7ds-card-title">War Stack Control</div>'
-                    + '<div class="si-7ds-text">Only admin, leader, and co-leader can see and use this toggle.</div>'
-                    + '<div class="si-7ds-text"><strong>Status:</strong> ' + esc((warStackState && warStackState.statusText) || 'War Stack inactive') + '</div>'
-                    + '<div class="si-7ds-text"><strong>Last toggled by:</strong> ' + esc((warStackState && warStackState.toggledBy) || '—') + '</div>'
-                    + '<div class="si-7ds-plan-actions">'
-                      + '<button type="button" class="si-7ds-btn ' + (isWarStackTabAvailable() ? 'armed' : 'alt') + '" data-action="activate-warstack">Activate</button>'
-                      + '<button type="button" class="si-7ds-btn alt" data-action="deactivate-warstack">Deactivate</button>'
-                    + '</div>'
-                  + '</div>'
-                : '';
             return ''
-                + warStackControlCard
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Overview</div>'
                 +   '<div class="si-7ds-summary-grid">'
@@ -2371,10 +2383,10 @@
                 +     '<span class="si-7ds-pill">Full jump</span>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-grid">'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Rule</div><div class="si-7ds-plan-stat-value">Happy jump</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Guide</div><div class="si-7ds-plan-stat-value">Premium payout</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">5 Xanax</div></div>'
                 +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Window</div><div class="si-7ds-plan-stat-value">30 mins</div></div>'
-                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">Arm tracked</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Coverage</div><div class="si-7ds-plan-stat-value">25 Xanax and 3 E-DVD\'s</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">1000 energy and 0 booster cooldown</div></div>'
                 +   '</div>'
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Envy Sin">Select</button>'
@@ -2407,10 +2419,10 @@
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">War Stack Plans</div>'
-                +   '<div class="si-7ds-text">This tab is controlled by staff from Overview. Use it to arm war-only plans and keep the same claim verification flow.</div>'
-                +   '<div class="si-7ds-text"><strong>War status:</strong> ' + esc((warStackState && warStackState.statusText) || 'War Stack inactive') + '</div>'
-                +   '<div class="si-7ds-text"><strong>Controlled by:</strong> ' + esc((warStackState && warStackState.toggledBy) || 'Staff') + '</div>'
-                +   '<div class="si-7ds-text"><strong>Tab state:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
+                +   '<div class="si-7ds-text">This row is only active before paired war starts. Use it to arm war-only plans and keep the same claim verification flow.</div>'
+                +   '<div class="si-7ds-text"><strong>War status:</strong> ' + esc((warStackState && warStackState.statusText) || 'Waiting for paired war') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Opponent:</strong> ' + esc((warStackState && warStackState.opponentName) || 'Unknown') + '</div>'
+                +   '<div class="si-7ds-text"><strong>War starts in:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
                 + '</div>'
                 + '<div class="si-7ds-plan-box">'
                 +   '<div class="si-7ds-plan-top">'
@@ -2783,7 +2795,7 @@
             bodyText = '(Start with 0 energy. Can combine with Envy plan)';
         }
         if (plan === 'Envy Sin') {
-            bodyText = '(Full stack, 0 booster CD, take 4 E-DVD\'s, then take Ecstasy! Combinable with Wrath for Xanax coverage.)';
+            bodyText = '(Start with 1000 energy and 0 booster cooldown.)';
         }
 
         backdrop.innerHTML = ''
@@ -2850,7 +2862,7 @@
                 selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
                 saveSession();
                 if (!canArmWarPlan(selectedPlan)) {
-                    window.alert('Greed Sin can only be armed while War Stack is activated by admin, leader, or co-leader.');
+                    window.alert('Greed Sin can only be armed while a paired war is pending and before war starts.');
                     refreshWarStackState(true);
                     return;
                 }
@@ -2878,24 +2890,6 @@
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () { loginWithApiKey(); });
-        });
-
-        overlay.querySelectorAll('[data-action="activate-warstack"]').forEach(function (btn) {
-            if (btn.dataset.bound) return;
-            btn.dataset.bound = '1';
-            btn.addEventListener('click', function () {
-                if (!isWarStackManager()) return;
-                setWarStackActive(true);
-            });
-        });
-
-        overlay.querySelectorAll('[data-action="deactivate-warstack"]').forEach(function (btn) {
-            if (btn.dataset.bound) return;
-            btn.dataset.bound = '1';
-            btn.addEventListener('click', function () {
-                if (!isWarStackManager()) return;
-                setWarStackActive(false);
-            });
         });
 
         overlay.querySelectorAll('[data-action="open-api-key-page"]').forEach(function (btn) {
