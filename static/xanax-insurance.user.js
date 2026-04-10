@@ -42,9 +42,6 @@
     var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '6282') : '6282');
     var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
     var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
-    var overviewFinancialSummary = (typeof GM_getValue === 'function' ? GM_getValue('si_overview_financial_summary', '{}') : '{}');
-    var overviewFinancialSummaryAt = (typeof GM_getValue === 'function' ? GM_getValue('si_overview_financial_summary_at', '') : '');
-    var overviewFinancialSummaryPending = false;
     var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
     var lastAdminNoticeClaimIds = (typeof GM_getValue === 'function' ? GM_getValue('si_last_admin_notice_claim_ids', '[]') : '[]');
     var autoDetectStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_auto_detect_status', 'Idle') : 'Idle');
@@ -298,8 +295,6 @@
             GM_setValue('si_sync_secret', syncSecret || '');
             GM_setValue('si_backend_status', backendStatus || 'Not tested');
             GM_setValue('si_last_sync_at', lastSyncAt || 'Never');
-            GM_setValue('si_overview_financial_summary', overviewFinancialSummary || '{}');
-            GM_setValue('si_overview_financial_summary_at', overviewFinancialSummaryAt || '');
             GM_setValue('si_server_claim_history', serverClaimHistory || '[]');
             GM_setValue('si_last_admin_notice_claim_ids', lastAdminNoticeClaimIds || '[]');
             GM_setValue('si_auto_detect_status', autoDetectStatus || 'Idle');
@@ -471,6 +466,7 @@
             return getWrathStageConfig(planActivationStage).paymentQty;
         }
         if (planActivationPlan === 'Pride Sin') return '2 Xanax';
+        if (planActivationPlan === 'Greed Sin') return '1 Xanax';
         return '—';
     }
 
@@ -949,7 +945,6 @@
             lastSyncAt = new Date().toLocaleString();
             saveSession();
             renderOverlay();
-            syncOverviewFinancialSummaryFromBackend(true);
             startAdminClaimNotifications();
             startMemberAutoDetection();
             startWarStackWatch();
@@ -1267,7 +1262,6 @@
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
-                syncOverviewFinancialSummaryFromBackend(false);
             }
             return data;
         }).catch(function (err) {
@@ -1480,6 +1474,7 @@
         var note = String(item.note || '').toLowerCase();
 
         if (plan === 'Pride Sin') return 2;
+        if (plan === 'Greed Sin') return 1;
         if (plan === 'Envy Sin') return 10;
         if (plan === 'Wrath Sin') {
             if (stack.indexOf('4') >= 0 || stack.indexOf('fourth') >= 0 || stack.indexOf('4th') >= 0 || note.indexOf('20 xanax') >= 0) return 20;
@@ -1490,75 +1485,16 @@
         return 0;
     }
 
-    
-    function getStoredOverviewFinancialSummary() {
-        try {
-            var parsed = JSON.parse(overviewFinancialSummary || '{}');
-            return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch (e) {
-            return {};
-        }
-    }
-
-    function getOverviewSummaryNumber(summary, key, fallback) {
-        var value = summary && summary[key];
-        var num = Number(value);
-        return isFinite(num) ? num : fallback;
-    }
-
-    function syncOverviewFinancialSummaryFromBackend(force) {
-        if (overviewFinancialSummaryPending && !force) return Promise.resolve(getStoredOverviewFinancialSummary());
-        if (!apiBase || !syncSecret) return Promise.resolve(null);
-        if (!memberApiKey) return Promise.resolve(null);
-
-        overviewFinancialSummaryPending = true;
-        return apiRequest('POST', '/api/overview/financial-summary', {
-            secret: syncSecret,
-            auth: buildServerAuthPayload()
-        }).then(function (data) {
-            overviewFinancialSummaryPending = false;
-            if (data && data.ok && data.summary) {
-                overviewFinancialSummary = JSON.stringify(data.summary || {});
-                overviewFinancialSummaryAt = new Date().toISOString();
-                saveSession();
-                renderOverlay();
-                return data.summary;
-            }
-            return null;
-        }).catch(function (err) {
-            overviewFinancialSummaryPending = false;
-            return null;
-        });
-    }
-
-    function ensureOverviewFinancialSummaryFresh() {
-        if (!memberApiKey || !apiBase || !syncSecret) return;
-        var ageMs = 0;
-        if (overviewFinancialSummaryAt) {
-            var parsed = Date.parse(overviewFinancialSummaryAt);
-            if (!isNaN(parsed)) ageMs = Date.now() - parsed;
-        } else {
-            ageMs = Number.MAX_SAFE_INTEGER;
-        }
-        if (ageMs > 5 * 60 * 1000) {
-            syncOverviewFinancialSummaryFromBackend(false);
-        }
-    }
-
-function getOverviewStats() {
+    function getOverviewStats() {
         var items = getClaimsDbItems();
         var verifiedItems = items.filter(function (i) {
             var status = String(i && i.status || '');
             return ['Paid', 'Under review', 'Pending review'].indexOf(status) >= 0;
         });
-        var fallbackTotalXanaxReceived = verifiedItems.reduce(function (sum, i) {
+        var totalXanaxReceived = verifiedItems.reduce(function (sum, i) {
             return sum + inferPlanPaymentQty(i);
         }, 0);
-        var fallbackFactionShare = fallbackTotalXanaxReceived * 0.15;
-        var summary = getStoredOverviewFinancialSummary();
-        var totalXanaxReceived = getOverviewSummaryNumber(summary, 'verified_xanax_in', fallbackTotalXanaxReceived);
-        var factionShare = getOverviewSummaryNumber(summary, 'faction_cut_xanax', fallbackFactionShare);
-        var insurancePool = getOverviewSummaryNumber(summary, 'insurance_pool_xanax', totalXanaxReceived - factionShare);
+        var factionShare = totalXanaxReceived * 0.15;
         return {
             total: items.length,
             open: items.filter(function (i) { return ['Pending review', 'Under review'].indexOf(String(i && i.status || '')) >= 0; }).length,
@@ -1568,14 +1504,14 @@ function getOverviewStats() {
             members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length,
             totalXanaxReceived: totalXanaxReceived,
             factionShare: factionShare,
-            insurancePool: insurancePool,
-            summarySource: summary && Object.keys(summary).length ? 'backend' : 'local'
+            insurancePool: totalXanaxReceived - factionShare
         };
     }
 
     function getPlanRuleText(plan) {
         var p = String(plan || '');
         if (p === 'Pride Sin') return 'single xanax / 1st use only';
+        if (p === 'Greed Sin') return '0-150 energy only';
         if (p === 'Wrath Sin') return '1st, 2nd, 3rd, 4th stack only';
         if (p === 'Envy Sin') return 'full happy jump only';
         return 'select a plan first';
@@ -1586,6 +1522,9 @@ function getOverviewStats() {
         if (!plan || plan === 'None') return false;
         if (plan === 'Pride Sin') {
             return t.indexOf('single') >= 0 || t.indexOf('1st') >= 0 || t.indexOf('first') >= 0 || t === '1';
+        }
+        if (plan === 'Greed Sin') {
+            return t.indexOf('war') >= 0 || t.indexOf('stack') >= 0 || t.indexOf('greed') >= 0;
         }
         if (plan === 'Wrath Sin') {
             return t.indexOf('1st') >= 0 || t.indexOf('2nd') >= 0 || t.indexOf('3rd') >= 0 || t.indexOf('4th') >= 0 || t.indexOf('first') >= 0 || t.indexOf('second') >= 0 || t.indexOf('third') >= 0 || t.indexOf('fourth') >= 0;
@@ -1599,6 +1538,7 @@ function getOverviewStats() {
     function getPayoutGuide(plan) {
         var p = String(plan || '');
         if (p === 'Pride Sin') return 'Guide: small single-use payout';
+        if (p === 'Greed Sin') return 'Guide: war reward plan';
         if (p === 'Wrath Sin') return 'Guide: medium stacked-use payout';
         if (p === 'Envy Sin') return 'Guide: premium full-jump payout';
         return 'Guide: no plan selected';
@@ -2325,8 +2265,36 @@ function getOverviewStats() {
     }
 
     function renderTabContent() {
+        if (activeTab === 'warstack') {
+            return ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">⚔️ War Stack Plans</div>'
+                +   '<div class="si-7ds-text">Use this tab during paired war prep. It hides automatically once the war starts.</div>'
+                + '</div>'
+
+                + '<div class="si-7ds-plan-box">'
+                +   '<div class="si-7ds-plan-top">'
+                +     '<div><div class="si-7ds-plan-name">Greed Sin</div><div class="si-7ds-plan-tier">War stack reward plan</div></div>'
+                +     '<span class="si-7ds-pill">War-only plan</span>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-grid">'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Payment</div><div class="si-7ds-plan-stat-value">1 Xanax</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Terms</div><div class="si-7ds-plan-stat-value">0-150 energy</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Reward</div><div class="si-7ds-plan-stat-value">2 Feathery Hotel Coupons</div></div>'
+                +     '<div class="si-7ds-plan-stat"><div class="si-7ds-plan-stat-label">Type</div><div class="si-7ds-plan-stat-value">Pre-war stack</div></div>'
+                +   '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Greed Sin">Select</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Greed Sin">Terms</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh War</button>'
+                +   '</div>'
+                + '</div>'
+
+                + '<div class="si-7ds-selected-banner">Selected plan: <strong>' + esc(selectedPlan || 'None') + '</strong></div>';
+
+        }
+
         if (activeTab === 'overview') {
-            ensureOverviewFinancialSummaryFresh();
             var overviewStats = getOverviewStats();
             return ''
                 + '<div class="si-7ds-card">'
@@ -2342,7 +2310,7 @@ function getOverviewStats() {
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.factionShare * 100) / 100) + '</div><div class="si-7ds-summary-label">Faction 15% Cut</div></div>'
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.insurancePool * 100) / 100) + '</div><div class="si-7ds-summary-label">Insurance Pool 85%</div></div>'
                 +   '</div>'
-                +   '<div class="si-7ds-text" style="margin-top:12px;">' + (overviewStats.summarySource === 'backend' ? '15% of verified Xanax plan payments goes to faction. These totals are pulled from verified backend receipts.' : '15% of verified Xanax plan payments goes to faction. Backend totals are not loaded yet, so this is using synced local claim estimates.') + '</div>'
+                +   '<div class="si-7ds-text" style="margin-top:12px;">15% of verified Xanax plan payments goes to faction. This currently totals from synced claim records using plan/stage amounts.</div>'
                 + '</div>';
         }
 
@@ -2760,6 +2728,9 @@ function getOverviewStats() {
         }
         if (plan === 'Wrath Sin') {
             bodyText = '(Start with 0 energy. Can combine with Envy plan)';
+        }
+        if (plan === 'Greed Sin') {
+            bodyText = '(Payment: 1 Xanax. Terms: 0-150 energy. Reward: 2 Feathery Hotel Coupons.)';
         }
         if (plan === 'Envy Sin') {
             bodyText = '(Full stack, 0 booster CD, take 4 E-DVD\'s, then take Ecstasy! Combinable with Wrath for Xanax coverage.)';
