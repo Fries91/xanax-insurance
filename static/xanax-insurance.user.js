@@ -86,9 +86,7 @@
 
     function getWarStackCountdownLabel() {
         if (warStackState && warStackState.enabled) return 'Active';
-        if (!warStackState || !warStackState.startAt) return 'Inactive';
-        if (warStackState.active) return 'War is live';
-        return formatDurationMs(getWarStackCountdownMs());
+        return 'Inactive';
     }
 
     function canArmWarPlan(plan) {
@@ -98,9 +96,8 @@
     function getWarPlanStatusText(plan) {
         if (String(plan || '') !== 'Greed Sin') return 'Standard plan';
         if (isPlanArmedActive('Greed Sin')) return 'Greed Sin active';
-        if (warStackState && warStackState.active) return 'War already started';
         if (warStackState && warStackState.visible) return 'Ready to arm';
-        return (warStackState && warStackState.statusText) || 'Waiting for paired war';
+        return (warStackState && warStackState.statusText) || 'War Stack is inactive';
     }
 
     function getWarStackButtonLabel() {
@@ -2403,7 +2400,6 @@
                 +   '<div class="si-7ds-plan-actions">'
                 +     '<button type="button" class="si-7ds-btn" data-action="warstack-enable">Activate</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="warstack-disable">Deactivate</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh</button>'
                 +   '</div>'
                 + '</div>' : '');
         }
@@ -2491,7 +2487,7 @@
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">War Stack Plans</div>'
-                +   '<div class="si-7ds-text">This tab is controlled by the shared War Stack toggle from Overview. Use it to arm war-only plans and keep the same claim verification flow.</div>'
+                +   '<div class="si-7ds-text">This tab is controlled by the shared War Stack toggle from Overview. Turn it on any time to arm War Stack plans and keep the same claim verification flow.</div>'
                 +   '<div class="si-7ds-text"><strong>War Stack:</strong> ' + esc((warStackState && warStackState.statusText) || 'Inactive') + '</div>'
                 +   '<div class="si-7ds-text"><strong>State:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
                 +   '<div class="si-7ds-text"><strong>Updated:</strong> ' + esc((warStackState && warStackState.updatedAt) || (warStackState && warStackState.checkedAt) || 'Unknown') + '</div>'
@@ -2511,7 +2507,6 @@
                 +     '<button type="button" class="si-7ds-btn" data-action="select-plan" data-plan="Greed Sin">Select</button>'
                 +     '<button type="button" class="si-7ds-btn ' + (isPlanArmedActive('Greed Sin') ? 'armed' : 'alt') + '" data-action="arm-plan" data-plan="Greed Sin">' + (isPlanArmedActive('Greed Sin') ? 'Greed Active' : 'Activate Greed') + '</button>'
                 +     '<button type="button" class="si-7ds-btn alt" data-action="open-terms" data-plan="Greed Sin">Terms</button>'
-                +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh War</button>'
                 +   '</div>'
                 + '</div>'
                 + '<div class="si-7ds-selected-banner">Selected war plan: <strong>' + esc(selectedPlan || 'None') + '</strong></div>'
@@ -2934,7 +2929,7 @@
                 selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
                 saveSession();
                 if (!canArmWarPlan(selectedPlan)) {
-                    window.alert('Greed Sin can only be armed while War Stack is activated.');
+                    window.alert('Greed Sin can only be armed while War Stack is active.');
                     refreshWarStackState(true);
                     return;
                 }
@@ -3228,3 +3223,4 @@
         boot();
     }
 })();
+Copy everything in the code block and paste it into Torn PDA.
