@@ -62,14 +62,198 @@
     var planActivationEnergy = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_energy', '') : '');
     var planActivationBoosterCd = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_booster_cd', '') : '');
     var planActivationExpiresAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_expires_at', '') : '');
+    var warStackState = (function () { try { return JSON.parse(typeof GM_getValue === 'function' ? GM_getValue('si_war_stack_state', '{}') : '{}') || {}; } catch (e) { return {}; } })();
+    var warStackTimer = null;
 
     var TAB_LABELS = {
         overview: 'Overview',
         plans: 'Plans',
         claims: 'Claims',
         admin: 'Admin',
-        settings: 'Settings'
+        settings: 'Settings',
+        warstack: '⚔️War Stack🛡️'
     };
+
+
+    function isWarStackTabAvailable() {
+        return !!(warStackState && warStackState.visible && !warStackState.active);
+    }
+
+    function getWarStackCountdownMs() {
+        return Math.max(0, parseIsoOrLocalTimestamp(warStackState && warStackState.startAt) - Date.now());
+    }
+
+    function getWarStackButtonLabel() {
+        return TAB_LABELS.warstack || '⚔️War Stack🛡️';
+    }
+
+    function getTornFactionRankedWars(apiKey) {
+        var url = 'https://api.torn.com/faction/?selections=rankedwars&key=' + encodeURIComponent(apiKey || '') + '&comment=sinners-insurance-warstack&timestamp=' + Date.now();
+        return tornApiRequest(url);
+    }
+
+    function flattenWarItems(raw) {
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw.slice();
+        if (typeof raw !== 'object') return [];
+        var out = [];
+        Object.keys(raw).forEach(function (key) {
+            var value = raw[key];
+            if (!value) return;
+            if (Array.isArray(value)) {
+                value.forEach(function (item) { if (item && typeof item === 'object') out.push(item); });
+                return;
+            }
+            if (typeof value === 'object') out.push(value);
+        });
+        return out;
+    }
+
+    function pickWarStartValue(item) {
+        if (!item || typeof item !== 'object') return '';
+        return item.start || item.start_at || item.start_time || item.startTime || item.war_start || item.start_timestamp || item.starts || item.match_start;
+    }
+
+    function pickWarEndValue(item) {
+        if (!item || typeof item !== 'object') return '';
+        return item.end || item.end_at || item.end_time || item.endTime || item.war_end || item.end_timestamp || item.ends || item.match_end;
+    }
+
+    function extractOpponentName(item) {
+        if (!item || typeof item !== 'object') return '';
+        var candidates = [
+            item.opponent_name,
+            item.opponent,
+            item.enemy_name,
+            item.enemy,
+            item.target_name,
+            item.faction_name,
+            item.name
+        ];
+        if (item.opponent_faction && typeof item.opponent_faction === 'object') {
+            candidates.unshift(item.opponent_faction.name || item.opponent_faction.faction_name || '');
+        }
+        if (item.enemy_faction && typeof item.enemy_faction === 'object') {
+            candidates.unshift(item.enemy_faction.name || item.enemy_faction.faction_name || '');
+        }
+        for (var i = 0; i < candidates.length; i += 1) {
+            var value = String(candidates[i] || '').trim();
+            if (value) return value;
+        }
+        return 'Opponent not found';
+    }
+
+    function parseRankedWarState(data) {
+        var container = data && (data.rankedwars || data.rankedWars || data.wars || data);
+        var wars = flattenWarItems(container);
+        var now = Date.now();
+        var paired = null;
+        var live = null;
+
+        wars.forEach(function (item) {
+            var startMs = parseIsoOrLocalTimestamp(pickWarStartValue(item));
+            var endMs = parseIsoOrLocalTimestamp(pickWarEndValue(item));
+            if (!startMs) return;
+            if (startMs > now) {
+                if (!paired || startMs < paired.startMs) {
+                    paired = {
+                        visible: true,
+                        active: false,
+                        opponentName: extractOpponentName(item),
+                        startAt: new Date(startMs).toLocaleString(),
+                        statusText: 'Paired war found. War Stack is active until the war starts.',
+                        source: item,
+                        startMs: startMs
+                    };
+                }
+                return;
+            }
+            if (startMs <= now && (!endMs || endMs > now)) {
+                if (!live || startMs > live.startMs) {
+                    live = {
+                        visible: false,
+                        active: true,
+                        opponentName: extractOpponentName(item),
+                        startAt: new Date(startMs).toLocaleString(),
+                        statusText: 'War has started. War Stack tab is now locked.',
+                        source: item,
+                        startMs: startMs
+                    };
+                }
+            }
+        });
+
+        if (paired) return paired;
+        if (live) return live;
+        return {
+            visible: false,
+            active: false,
+            opponentName: '',
+            startAt: '',
+            statusText: 'No paired war detected.',
+            startMs: 0
+        };
+    }
+
+    function updateWarStackState(nextState, forceRender) {
+        warStackState = {
+            visible: !!(nextState && nextState.visible),
+            active: !!(nextState && nextState.active),
+            opponentName: String(nextState && nextState.opponentName || ''),
+            startAt: String(nextState && nextState.startAt || ''),
+            statusText: String(nextState && nextState.statusText || ''),
+            checkedAt: new Date().toLocaleString()
+        };
+        if (activeTab === 'warstack' && !isWarStackTabAvailable()) activeTab = 'overview';
+        saveSession();
+        if (forceRender && overlay) renderOverlay();
+    }
+
+    function refreshWarStackState(forceRender) {
+        if (!memberApiKey) {
+            updateWarStackState({
+                visible: false,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: 'Add an API key to check paired wars.'
+            }, forceRender);
+            return Promise.resolve(null);
+        }
+
+        return getTornFactionRankedWars(memberApiKey).then(function (data) {
+            if (data && data.error) {
+                updateWarStackState({
+                    visible: false,
+                    active: false,
+                    opponentName: '',
+                    startAt: '',
+                    statusText: 'War Stack hidden. Ranked wars API access was not available.'
+                }, forceRender);
+                return data;
+            }
+            updateWarStackState(parseRankedWarState(data || {}), forceRender);
+            return data;
+        }).catch(function () {
+            updateWarStackState({
+                visible: false,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: 'War Stack check failed.'
+            }, forceRender);
+            return null;
+        });
+    }
+
+    function startWarStackWatch() {
+        if (warStackTimer) clearInterval(warStackTimer);
+        warStackTimer = null;
+        refreshWarStackState(true).catch(function () {});
+        warStackTimer = setInterval(function () {
+            refreshWarStackState(true).catch(function () {});
+        }, 60000);
+    }
 
     function getVisibleTabKeys() {
         return isAdmin()
@@ -128,6 +312,7 @@
             GM_setValue('si_plan_activation_energy', planActivationEnergy || '');
             GM_setValue('si_plan_activation_booster_cd', planActivationBoosterCd || '');
             GM_setValue('si_plan_activation_expires_at', planActivationExpiresAt || '');
+            GM_setValue('si_war_stack_state', JSON.stringify(warStackState || {}));
         }
     }
 
@@ -761,6 +946,7 @@
             renderOverlay();
             startAdminClaimNotifications();
             startMemberAutoDetection();
+            startWarStackWatch();
             return detected;
         }).catch(function () {
             backendStatus = 'API login failed';
@@ -780,6 +966,7 @@
         renderOverlay();
         startAdminClaimNotifications();
         startMemberAutoDetection();
+        startWarStackWatch();
     }
 
     function submitClaim() {
@@ -1650,6 +1837,15 @@
     0 0 14px rgba(176, 27, 35, .24),
     0 8px 18px rgba(0,0,0,.25) !important;
 }
+#si-7ds-overlay .si-7ds-tabrow-war {
+  display: flex !important;
+  justify-content: center !important;
+  padding-top: 10px !important;
+}
+#si-7ds-overlay .si-7ds-tabrow-war .si-7ds-tab {
+  width: min(240px, 100%) !important;
+  min-width: 0 !important;
+}
 #si-7ds-overlay .si-7ds-body {
   padding: 14px !important;
   overflow: auto !important;
@@ -1969,6 +2165,13 @@
     font-size: 10px !important;
     padding: 0 4px !important;
   }
+  #si-7ds-overlay .si-7ds-tabrow-war {
+    padding-top: 8px !important;
+  }
+  #si-7ds-overlay .si-7ds-tabrow-war .si-7ds-tab {
+    width: 100% !important;
+    max-width: 220px !important;
+  }
 }
         `);
 
@@ -2011,11 +2214,18 @@
 
     function renderTabRow() {
         var keys = getVisibleTabKeys();
-        if (keys.indexOf(activeTab) < 0) activeTab = 'overview';
+        if (keys.indexOf(activeTab) < 0 && activeTab !== 'warstack') activeTab = 'overview';
         return '<div class="si-7ds-tabrow">'
             + keys.map(function (key) {
                 return '<button type="button" class="si-7ds-tab' + (activeTab === key ? ' active' : '') + '" data-tab="' + key + '">' + TAB_LABELS[key] + '</button>';
             }).join('')
+            + '</div>';
+    }
+
+    function renderWarStackRow() {
+        if (!isWarStackTabAvailable()) return '';
+        return '<div class="si-7ds-tabrow si-7ds-tabrow-war">'
+            + '<button type="button" class="si-7ds-tab' + (activeTab === 'warstack' ? ' active' : '') + '" data-tab="warstack">' + getWarStackButtonLabel() + '</button>'
             + '</div>';
     }
 
@@ -2549,6 +2759,12 @@
             btn.addEventListener('click', function () { window.open(getCustomKeyUrl(), '_blank'); });
         });
 
+        overlay.querySelectorAll('[data-action="refresh-warstack"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { refreshWarStackState(true); });
+        });
+
         overlay.querySelectorAll('[data-action="logout-session"]').forEach(function (btn) {
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
@@ -2707,6 +2923,7 @@
             +   '<button type="button" class="si-7ds-close" aria-label="Close">×</button>'
             + '</div>'
             + renderTabRow()
+            + renderWarStackRow()
             + '<div class="si-7ds-body">'
             +   renderTabContent()
             + '</div>';
