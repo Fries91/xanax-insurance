@@ -63,6 +63,7 @@
     var planActivationBoosterCd = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_booster_cd', '') : '');
     var planActivationExpiresAt = (typeof GM_getValue === 'function' ? GM_getValue('si_plan_activation_expires_at', '') : '');
     var warStackState = (function () { try { return JSON.parse(typeof GM_getValue === 'function' ? GM_getValue('si_war_stack_state', '{}') : '{}') || {}; } catch (e) { return {}; } })();
+    var financialSummary = (function () { try { return JSON.parse(typeof GM_getValue === 'function' ? GM_getValue('si_financial_summary', '{}') : '{}') || {}; } catch (e) { return {}; } })();
     var warStackTimer = null;
 
     var TAB_LABELS = {
@@ -76,7 +77,7 @@
 
 
     function isWarStackTabAvailable() {
-        return !!(warStackState && warStackState.visible && !warStackState.active);
+        return !!(warStackState && warStackState.enabled);
     }
 
     function getWarStackCountdownMs() {
@@ -84,7 +85,8 @@
     }
 
     function getWarStackCountdownLabel() {
-        if (!warStackState || !warStackState.startAt) return 'Unknown';
+        if (warStackState && warStackState.enabled) return 'Active';
+        if (!warStackState || !warStackState.startAt) return 'Inactive';
         if (warStackState.active) return 'War is live';
         return formatDurationMs(getWarStackCountdownMs());
     }
@@ -215,11 +217,14 @@
 
     function updateWarStackState(nextState, forceRender) {
         warStackState = {
-            visible: !!(nextState && nextState.visible),
+            enabled: !!(nextState && (nextState.enabled || nextState.visible)),
+            visible: !!(nextState && (nextState.visible || nextState.enabled)),
             active: !!(nextState && nextState.active),
             opponentName: String(nextState && nextState.opponentName || ''),
             startAt: String(nextState && nextState.startAt || ''),
             statusText: String(nextState && nextState.statusText || ''),
+            updatedAt: String(nextState && nextState.updatedAt || ''),
+            updatedBy: String(nextState && nextState.updatedBy || ''),
             checkedAt: new Date().toLocaleString()
         };
         if (activeTab === 'warstack' && !isWarStackTabAvailable()) activeTab = 'overview';
@@ -228,38 +233,83 @@
     }
 
     function refreshWarStackState(forceRender) {
-        if (!memberApiKey) {
+        if (!memberApiKey || !syncSecret || !apiBase) {
             updateWarStackState({
+                enabled: false,
                 visible: false,
                 active: false,
                 opponentName: '',
                 startAt: '',
-                statusText: 'Add an API key to check paired wars.'
+                statusText: 'Log in to load War Stack state.'
             }, forceRender);
             return Promise.resolve(null);
         }
 
-        return getTornFactionRankedWars(memberApiKey).then(function (data) {
-            if (data && data.error) {
-                updateWarStackState({
-                    visible: false,
-                    active: false,
-                    opponentName: '',
-                    startAt: '',
-                    statusText: 'War Stack hidden. Ranked wars API access was not available.'
-                }, forceRender);
-                return data;
-            }
-            updateWarStackState(parseRankedWarState(data || {}), forceRender);
+        return apiRequest('POST', '/api/warstack/state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            var serverState = data && data.state ? data.state : {};
+            updateWarStackState({
+                enabled: !!serverState.enabled,
+                visible: !!serverState.enabled,
+                active: false,
+                opponentName: '',
+                startAt: '',
+                statusText: serverState.enabled ? 'War Stack is active for the faction.' : 'War Stack is inactive for the faction.',
+                updatedAt: String(serverState.updatedAt || ''),
+                updatedBy: String(serverState.updatedBy || '')
+            }, forceRender);
             return data;
         }).catch(function () {
             updateWarStackState({
+                enabled: false,
                 visible: false,
                 active: false,
                 opponentName: '',
                 startAt: '',
-                statusText: 'War Stack check failed.'
+                statusText: 'War Stack state check failed.'
             }, forceRender);
+            return null;
+        });
+    }
+
+    function setWarStackServerState(enabled) {
+        if (!memberApiKey || !syncSecret || !apiBase) {
+            window.alert('Log in first to change War Stack state.');
+            return Promise.resolve(null);
+        }
+        return apiRequest('POST', '/api/warstack/set-state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload(),
+            enabled: !!enabled
+        }).then(function (data) {
+            if (!data || !data.ok) {
+                window.alert((data && data.error) || 'Could not update War Stack state.');
+                return data;
+            }
+            return refreshWarStackState(true).then(function () { return data; });
+        }).catch(function () {
+            window.alert('Could not update War Stack state.');
+            return null;
+        });
+    }
+
+    function refreshFinancialSummary(forceRender) {
+        if (!memberApiKey || !syncSecret || !apiBase) {
+            return Promise.resolve(null);
+        }
+        return apiRequest('POST', '/api/overview/financial-summary', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            if (data && data.ok && data.summary) {
+                financialSummary = data.summary || {};
+                saveSession();
+                if (forceRender && overlay) renderOverlay();
+            }
+            return data;
+        }).catch(function () {
             return null;
         });
     }
@@ -268,8 +318,10 @@
         if (warStackTimer) clearInterval(warStackTimer);
         warStackTimer = null;
         refreshWarStackState(true).catch(function () {});
+        refreshFinancialSummary(false).catch(function () {});
         warStackTimer = setInterval(function () {
             refreshWarStackState(true).catch(function () {});
+            refreshFinancialSummary(false).catch(function () {});
         }, 60000);
     }
 
@@ -331,6 +383,7 @@
             GM_setValue('si_plan_activation_booster_cd', planActivationBoosterCd || '');
             GM_setValue('si_plan_activation_expires_at', planActivationExpiresAt || '');
             GM_setValue('si_war_stack_state', JSON.stringify(warStackState || {}));
+            GM_setValue('si_financial_summary', JSON.stringify(financialSummary || {}));
         }
     }
 
@@ -993,6 +1046,7 @@
             startAdminClaimNotifications();
             startMemberAutoDetection();
             startWarStackWatch();
+            refreshFinancialSummary(false).catch(function () {});
             return detected;
         }).catch(function () {
             backendStatus = 'API login failed';
@@ -1007,6 +1061,8 @@
     function logoutSession() {
         sessionRole = 'guest';
         sessionName = 'Guest';
+        financialSummary = {};
+        warStackState = { enabled: false, visible: false, active: false, statusText: 'Inactive' };
         authMode = memberApiKey ? 'torn-api' : 'local';
         saveSession();
         renderOverlay();
@@ -1309,6 +1365,7 @@
                 backendStatus = 'Claims pulled';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
+                refreshFinancialSummary(false).catch(function () {});
                 renderOverlay();
             }
             return data;
@@ -1542,10 +1599,13 @@
             var status = String(i && i.status || '');
             return ['Paid', 'Under review', 'Pending review'].indexOf(status) >= 0;
         });
-        var totalXanaxReceived = verifiedItems.reduce(function (sum, i) {
+        var localTotalXanaxReceived = verifiedItems.reduce(function (sum, i) {
             return sum + inferPlanPaymentQty(i);
         }, 0);
-        var factionShare = totalXanaxReceived * 0.15;
+        var localFactionShare = localTotalXanaxReceived * 0.15;
+        var backendTotal = Number(financialSummary && financialSummary.verified_xanax_in);
+        var backendFaction = Number(financialSummary && financialSummary.faction_cut_xanax);
+        var backendPool = Number(financialSummary && financialSummary.insurance_pool_xanax);
         return {
             total: items.length,
             open: items.filter(function (i) { return ['Pending review', 'Under review'].indexOf(String(i && i.status || '')) >= 0; }).length,
@@ -1553,9 +1613,10 @@
             denied: items.filter(function (i) { return String(i && i.status || '') === 'Denied'; }).length,
             payouts: items.reduce(function (sum, i) { return sum + parseMoneyLoose(i && i.payout); }, 0),
             members: Array.from(new Set(items.map(function (i) { return String(i && i.member || '').trim(); }).filter(Boolean))).length,
-            totalXanaxReceived: totalXanaxReceived,
-            factionShare: factionShare,
-            insurancePool: totalXanaxReceived - factionShare
+            totalXanaxReceived: isFinite(backendTotal) ? backendTotal : localTotalXanaxReceived,
+            factionShare: isFinite(backendFaction) ? backendFaction : localFactionShare,
+            insurancePool: isFinite(backendPool) ? backendPool : (localTotalXanaxReceived - localFactionShare),
+            summarySource: isFinite(backendTotal) ? 'backend' : 'local'
         };
     }
 
@@ -2332,8 +2393,19 @@
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.factionShare * 100) / 100) + '</div><div class="si-7ds-summary-label">Faction 15% Cut</div></div>'
                 +     '<div class="si-7ds-summary-tile"><div class="si-7ds-summary-num">' + String(Math.round(overviewStats.insurancePool * 100) / 100) + '</div><div class="si-7ds-summary-label">Insurance Pool 85%</div></div>'
                 +   '</div>'
-                +   '<div class="si-7ds-text" style="margin-top:12px;">15% of verified Xanax plan payments goes to faction. This currently totals from synced claim records using plan/stage amounts.</div>'
-                + '</div>';
+                +   '<div class="si-7ds-text" style="margin-top:12px;">15% of verified Xanax plan payments goes to faction. Source: ' + (overviewStats.summarySource === 'backend' ? 'Render backend verified receipts.' : 'Local synced claim estimate.') + '</div>'
+                + '</div>'
+                + (isAdmin() ? ''
+                + '<div class="si-7ds-card">'
+                +   '<div class="si-7ds-card-title">War Stack Control</div>'
+                +   '<div class="si-7ds-text">Faction-wide War Stack state: <strong>' + (isWarStackTabAvailable() ? 'Active' : 'Inactive') + '</strong></div>'
+                +   '<div class="si-7ds-text">' + esc((warStackState && warStackState.statusText) || 'No shared state loaded yet.') + '</div>'
+                +   '<div class="si-7ds-plan-actions">'
+                +     '<button type="button" class="si-7ds-btn" data-action="warstack-enable">Activate</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="warstack-disable">Deactivate</button>'
+                +     '<button type="button" class="si-7ds-btn alt" data-action="refresh-warstack">Refresh</button>'
+                +   '</div>'
+                + '</div>' : '');
         }
 
         if (activeTab === 'plans') {
@@ -2419,10 +2491,10 @@
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">War Stack Plans</div>'
-                +   '<div class="si-7ds-text">This row is only active before paired war starts. Use it to arm war-only plans and keep the same claim verification flow.</div>'
-                +   '<div class="si-7ds-text"><strong>War status:</strong> ' + esc((warStackState && warStackState.statusText) || 'Waiting for paired war') + '</div>'
-                +   '<div class="si-7ds-text"><strong>Opponent:</strong> ' + esc((warStackState && warStackState.opponentName) || 'Unknown') + '</div>'
-                +   '<div class="si-7ds-text"><strong>War starts in:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
+                +   '<div class="si-7ds-text">This tab is controlled by the shared War Stack toggle from Overview. Use it to arm war-only plans and keep the same claim verification flow.</div>'
+                +   '<div class="si-7ds-text"><strong>War Stack:</strong> ' + esc((warStackState && warStackState.statusText) || 'Inactive') + '</div>'
+                +   '<div class="si-7ds-text"><strong>State:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
+                +   '<div class="si-7ds-text"><strong>Updated:</strong> ' + esc((warStackState && warStackState.updatedAt) || (warStackState && warStackState.checkedAt) || 'Unknown') + '</div>'
                 + '</div>'
                 + '<div class="si-7ds-plan-box">'
                 +   '<div class="si-7ds-plan-top">'
@@ -2862,7 +2934,7 @@
                 selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
                 saveSession();
                 if (!canArmWarPlan(selectedPlan)) {
-                    window.alert('Greed Sin can only be armed while a paired war is pending and before war starts.');
+                    window.alert('Greed Sin can only be armed while War Stack is activated.');
                     refreshWarStackState(true);
                     return;
                 }
@@ -2902,6 +2974,18 @@
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () { refreshWarStackState(true); });
+        });
+
+        overlay.querySelectorAll('[data-action="warstack-enable"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { setWarStackServerState(true); });
+        });
+
+        overlay.querySelectorAll('[data-action="warstack-disable"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () { setWarStackServerState(false); });
         });
 
         overlay.querySelectorAll('[data-action="logout-session"]').forEach(function (btn) {
