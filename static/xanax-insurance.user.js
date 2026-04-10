@@ -75,18 +75,20 @@
     };
 
 
+    function isWarStackManager() {
+        return isAdmin();
+    }
+
     function isWarStackTabAvailable() {
-        return !!(warStackState && warStackState.visible && !warStackState.active);
+        return !!(warStackState && warStackState.visible);
     }
 
     function getWarStackCountdownMs() {
-        return Math.max(0, parseIsoOrLocalTimestamp(warStackState && warStackState.startAt) - Date.now());
+        return 0;
     }
 
     function getWarStackCountdownLabel() {
-        if (!warStackState || !warStackState.startAt) return 'Unknown';
-        if (warStackState.active) return 'War is live';
-        return formatDurationMs(getWarStackCountdownMs());
+        return isWarStackTabAvailable() ? 'Active by staff' : 'Inactive';
     }
 
     function canArmWarPlan(plan) {
@@ -96,9 +98,8 @@
     function getWarPlanStatusText(plan) {
         if (String(plan || '') !== 'Greed Sin') return 'Standard plan';
         if (isPlanArmedActive('Greed Sin')) return 'Greed Sin active';
-        if (warStackState && warStackState.active) return 'War already started';
-        if (warStackState && warStackState.visible) return 'Ready to arm';
-        return (warStackState && warStackState.statusText) || 'Waiting for paired war';
+        if (isWarStackTabAvailable()) return 'Ready to arm';
+        return (warStackState && warStackState.statusText) || 'War Stack inactive';
     }
 
     function getWarStackButtonLabel() {
@@ -125,52 +126,6 @@
             if (typeof value === 'object') out.push(value);
         });
         return out;
-    }
-
-    function collectPossibleWarItems(raw, depth, seen) {
-        depth = parseInt(depth || 0, 10) || 0;
-        seen = seen || [];
-        if (!raw || depth > 6) return [];
-        if (typeof raw !== 'object') return [];
-        if (seen.indexOf(raw) >= 0) return [];
-        seen.push(raw);
-
-        var items = [];
-        var hasWarSignals = false;
-        var keys = Object.keys(raw);
-        for (var i = 0; i < keys.length; i += 1) {
-            var key = String(keys[i] || '').toLowerCase();
-            if (
-                key === 'start' || key === 'start_at' || key === 'start_time' || key === 'starttime' ||
-                key === 'war_start' || key === 'start_timestamp' || key === 'starts' || key === 'match_start' ||
-                key === 'end' || key === 'end_at' || key === 'end_time' || key === 'endtime' ||
-                key === 'war_end' || key === 'end_timestamp' || key === 'ends' || key === 'match_end' ||
-                key.indexOf('opponent') >= 0 || key.indexOf('enemy') >= 0 || key.indexOf('war') >= 0 ||
-                key.indexOf('faction') >= 0 || key === 'name' || key === 'status'
-            ) {
-                hasWarSignals = true;
-                break;
-            }
-        }
-        if (hasWarSignals) items.push(raw);
-
-        keys.forEach(function (key) {
-            var value = raw[key];
-            if (!value) return;
-            if (Array.isArray(value)) {
-                value.forEach(function (item) {
-                    if (item && typeof item === 'object') {
-                        items = items.concat(collectPossibleWarItems(item, depth + 1, seen));
-                    }
-                });
-                return;
-            }
-            if (typeof value === 'object') {
-                items = items.concat(collectPossibleWarItems(value, depth + 1, seen));
-            }
-        });
-
-        return items;
     }
 
     function pickWarStartValue(item) {
@@ -209,22 +164,7 @@
 
     function parseRankedWarState(data) {
         var container = data && (data.rankedwars || data.rankedWars || data.wars || data);
-        var wars = flattenWarItems(container).concat(collectPossibleWarItems(data || {}, 0, []));
-        var uniqueWars = [];
-        var seenKeys = {};
-        wars.forEach(function (item) {
-            if (!item || typeof item !== 'object') return;
-            var key = [
-                String(pickWarStartValue(item) || ''),
-                String(pickWarEndValue(item) || ''),
-                String(extractOpponentName(item) || ''),
-                String(item.id || item.war_id || item.rank_id || item.rankedwarid || '')
-            ].join('|');
-            if (seenKeys[key]) return;
-            seenKeys[key] = 1;
-            uniqueWars.push(item);
-        });
-        var wars = uniqueWars;
+        var wars = flattenWarItems(container);
         var now = Date.now();
         var paired = null;
         var live = null;
@@ -277,61 +217,35 @@
     function updateWarStackState(nextState, forceRender) {
         warStackState = {
             visible: !!(nextState && nextState.visible),
-            active: !!(nextState && nextState.active),
-            opponentName: String(nextState && nextState.opponentName || ''),
-            startAt: String(nextState && nextState.startAt || ''),
+            active: false,
+            opponentName: '',
+            startAt: '',
             statusText: String(nextState && nextState.statusText || ''),
-            checkedAt: new Date().toLocaleString()
+            checkedAt: new Date().toLocaleString(),
+            toggledBy: String(nextState && nextState.toggledBy || (warStackState && warStackState.toggledBy) || '')
         };
         if (activeTab === 'warstack' && !isWarStackTabAvailable()) activeTab = 'overview';
         saveSession();
         if (forceRender && overlay) renderOverlay();
     }
 
-    function refreshWarStackState(forceRender) {
-        if (!memberApiKey) {
-            updateWarStackState({
-                visible: false,
-                active: false,
-                opponentName: '',
-                startAt: '',
-                statusText: 'Add an API key to check paired wars.'
-            }, forceRender);
-            return Promise.resolve(null);
-        }
+    function setWarStackActive(enabled) {
+        var actorLabel = sessionName || 'Staff';
+        updateWarStackState({
+            visible: !!enabled,
+            statusText: enabled ? 'War Stack is active by staff toggle.' : 'War Stack is inactive.',
+            toggledBy: actorLabel
+        }, true);
+    }
 
-        return getTornFactionRankedWars(memberApiKey).then(function (data) {
-            if (data && data.error) {
-                updateWarStackState({
-                    visible: false,
-                    active: false,
-                    opponentName: '',
-                    startAt: '',
-                    statusText: 'War Stack hidden. Ranked wars API access was not available' + (data && data.error && data.error.code ? ' (error ' + data.error.code + ')' : '') + '.'
-                }, forceRender);
-                return data;
-            }
-            updateWarStackState(parseRankedWarState(data || {}), forceRender);
-            return data;
-        }).catch(function () {
-            updateWarStackState({
-                visible: false,
-                active: false,
-                opponentName: '',
-                startAt: '',
-                statusText: 'War Stack check failed.'
-            }, forceRender);
-            return null;
-        });
+    function refreshWarStackState(forceRender) {
+        if (forceRender && overlay) renderOverlay();
+        return Promise.resolve(warStackState);
     }
 
     function startWarStackWatch() {
         if (warStackTimer) clearInterval(warStackTimer);
         warStackTimer = null;
-        refreshWarStackState(true).catch(function () {});
-        warStackTimer = setInterval(function () {
-            refreshWarStackState(true).catch(function () {});
-        }, 60000);
     }
 
     function getVisibleTabKeys() {
@@ -2379,7 +2293,20 @@
     function renderTabContent() {
         if (activeTab === 'overview') {
             var overviewStats = getOverviewStats();
+            var warStackControlCard = isWarStackManager()
+                ? '<div class="si-7ds-card">'
+                    + '<div class="si-7ds-card-title">War Stack Control</div>'
+                    + '<div class="si-7ds-text">Only admin, leader, and co-leader can see and use this toggle.</div>'
+                    + '<div class="si-7ds-text"><strong>Status:</strong> ' + esc((warStackState && warStackState.statusText) || 'War Stack inactive') + '</div>'
+                    + '<div class="si-7ds-text"><strong>Last toggled by:</strong> ' + esc((warStackState && warStackState.toggledBy) || '—') + '</div>'
+                    + '<div class="si-7ds-plan-actions">'
+                      + '<button type="button" class="si-7ds-btn ' + (isWarStackTabAvailable() ? 'armed' : 'alt') + '" data-action="activate-warstack">Activate</button>'
+                      + '<button type="button" class="si-7ds-btn alt" data-action="deactivate-warstack">Deactivate</button>'
+                    + '</div>'
+                  + '</div>'
+                : '';
             return ''
+                + warStackControlCard
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">Overview</div>'
                 +   '<div class="si-7ds-summary-grid">'
@@ -2480,10 +2407,10 @@
             return ''
                 + '<div class="si-7ds-card">'
                 +   '<div class="si-7ds-card-title">War Stack Plans</div>'
-                +   '<div class="si-7ds-text">This row is only active before paired war starts. Use it to arm war-only plans and keep the same claim verification flow.</div>'
-                +   '<div class="si-7ds-text"><strong>War status:</strong> ' + esc((warStackState && warStackState.statusText) || 'Waiting for paired war') + '</div>'
-                +   '<div class="si-7ds-text"><strong>Opponent:</strong> ' + esc((warStackState && warStackState.opponentName) || 'Unknown') + '</div>'
-                +   '<div class="si-7ds-text"><strong>War starts in:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
+                +   '<div class="si-7ds-text">This tab is controlled by staff from Overview. Use it to arm war-only plans and keep the same claim verification flow.</div>'
+                +   '<div class="si-7ds-text"><strong>War status:</strong> ' + esc((warStackState && warStackState.statusText) || 'War Stack inactive') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Controlled by:</strong> ' + esc((warStackState && warStackState.toggledBy) || 'Staff') + '</div>'
+                +   '<div class="si-7ds-text"><strong>Tab state:</strong> <span id="si-7ds-war-start-countdown">' + esc(getWarStackCountdownLabel()) + '</span></div>'
                 + '</div>'
                 + '<div class="si-7ds-plan-box">'
                 +   '<div class="si-7ds-plan-top">'
@@ -2923,7 +2850,7 @@
                 selectedPlan = btn.getAttribute('data-plan') || selectedPlan || 'None';
                 saveSession();
                 if (!canArmWarPlan(selectedPlan)) {
-                    window.alert('Greed Sin can only be armed while a paired war is pending and before war starts.');
+                    window.alert('Greed Sin can only be armed while War Stack is activated by admin, leader, or co-leader.');
                     refreshWarStackState(true);
                     return;
                 }
@@ -2951,6 +2878,24 @@
             if (btn.dataset.bound) return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', function () { loginWithApiKey(); });
+        });
+
+        overlay.querySelectorAll('[data-action="activate-warstack"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                if (!isWarStackManager()) return;
+                setWarStackActive(true);
+            });
+        });
+
+        overlay.querySelectorAll('[data-action="deactivate-warstack"]').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                if (!isWarStackManager()) return;
+                setWarStackActive(false);
+            });
         });
 
         overlay.querySelectorAll('[data-action="open-api-key-page"]').forEach(function (btn) {
