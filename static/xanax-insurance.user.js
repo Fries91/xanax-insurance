@@ -532,6 +532,263 @@
     }
 
     function backendAdminLogin() {
+        orEach(function (x) {
+            var st = String(x && x.status || '');
+            if (st === 'Pending review' || st === 'Under review') pending += 1;
+            if (st === 'Approved') approved += 1;
+            if (st === 'Denied') denied += 1;
+            if (st === 'Paid') paid += 1;
+            var n = String(x && x.member || '').trim();
+            if (n) names[n.toLowerCase()] = true;
+            var m = String(x && x.payout || '').replace(/[^0-9.-]/g, '');
+            payouts += Number(m || 0) || 0;
+        });
+        return {
+            total: total,
+            pending: pending,
+            approved: approved,
+            denied: denied,
+            paid: paid,
+            members: Object.keys(names).length,
+            payouts: payouts
+        };
+    }
+
+    function buildServerAuthPayload() {
+        return {
+            mode: authMode || 'local',
+            admin_api_key: adminApiKey || '',
+            api_key: memberApiKey || '',
+            faction_id: factionIdLock || ''
+        };
+    }
+
+    function apiRequest(method, path, payload) {
+        var url = String(apiBase || '').replace(/\/$/, '') + path;
+        if (typeof GM_xmlhttpRequest === 'function') {
+            return new Promise(function (resolve, reject) {
+                GM_xmlhttpRequest({
+                    method: method,
+                    url: url,
+                    headers: { 'Content-Type': 'application/json' },
+                    data: payload ? JSON.stringify(payload) : undefined,
+                    onload: function (res) {
+                        try {
+                            resolve(JSON.parse(res.responseText || '{}'));
+                        } catch (e) {
+                            resolve({});
+                        }
+                    },
+                    onerror: reject
+                });
+            });
+        }
+        return fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: payload ? JSON.stringify(payload) : undefined
+        }).then(function (r) { return r.json(); });
+    }
+
+    function testBackendConnection() {
+        return apiRequest('GET', '/api/health', null).then(function (data) {
+            backendStatus = data && data.ok ? 'Connected' : 'Health check failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+        }).catch(function () {
+            backendStatus = 'Connection failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+        });
+    }
+
+    function syncClaimsFromBackend() {
+        return apiRequest('POST', '/api/claims/pull', { secret: syncSecret }).then(function (data) {
+            if (data && Array.isArray(data.claims)) {
+                saveClaims(data.claims);
+                if (!selectedClaimId && data.claims.length) selectedClaimId = data.claims[0].id || '';
+                syncFromSelectedClaim();
+                backendStatus = 'Claims pulled';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+        }).catch(function () {
+            backendStatus = 'Pull failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+        });
+    }
+
+    function pushCurrentClaimToBackend(actionOverride) {
+        if (!claimId) return Promise.resolve(null);
+        var action = actionOverride || (isAdmin() ? 'admin_update' : (isMember() ? 'member_submit' : 'guest'));
+        var payload = {
+            secret: syncSecret,
+            action: action,
+            auth: buildServerAuthPayload(),
+            claim: {
+                id: claimId || '',
+                member: sessionName || 'Guest',
+                plan: selectedPlan || 'None',
+                status: claimStatus || 'Not submitted',
+                note: claimNote || '',
+                loss: claimLoss || '',
+                proof: claimProof || '',
+                stack: claimStack || '',
+                payout: payoutAmount || '',
+                decision: decisionNote || '',
+                updatedAt: new Date().toISOString()
+            }
+        };
+        return apiRequest('POST', '/api/claims/push', payload).then(function (data) {
+            backendStatus = data && data.ok ? 'Claim pushed' : ((data && data.error) ? data.error : 'Push failed');
+            lastSyncAt = new Date().toLocaleString();
+            if (data && data.claim) {
+                var rec = data.claim;
+                claimId = rec.id || claimId;
+                selectedClaimId = rec.id || selectedClaimId;
+                selectedPlan = rec.plan || selectedPlan;
+                claimStatus = rec.status || claimStatus;
+                claimNote = rec.note || claimNote;
+                claimLoss = rec.loss || claimLoss;
+                claimProof = rec.proof || claimProof;
+                claimStack = rec.stack || claimStack;
+                payoutAmount = rec.payout || payoutAmount;
+                decisionNote = rec.decision || decisionNote;
+                upsertCurrentClaim();
+            }
+            saveSession();
+            renderOverlay();
+            return data;
+        }).catch(function () {
+            backendStatus = 'Push failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    }
+
+    function fetchSelectedClaimHistory() {
+        if (!selectedClaimId || !syncSecret || historyLoading) return Promise.resolve(null);
+        historyLoading = true;
+        return apiRequest('POST', '/api/claims/history', {
+            secret: syncSecret,
+            claim_id: selectedClaimId
+        }).then(function (data) {
+            historyLoading = false;
+            if (data && Array.isArray(data.history)) {
+                var mapped = data.history.map(function (x) {
+                    return {
+                        at: x.at || x.createdAt || '',
+                        text: x.text || x.note || JSON.stringify(x)
+                    };
+                });
+                saveHistory(mapped);
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            historyLoading = false;
+            return null;
+        });
+    }
+
+    function fetchWarState() {
+        if (warLoading || !syncSecret) return Promise.resolve(null);
+        warLoading = true;
+        return apiRequest('POST', '/api/warstack/state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            warLoading = false;
+            var state = data && (data.state || data.warstack);
+            if (state) {
+                warEnabled = !!state.enabled;
+                warUpdatedAt = state.updatedAt || '';
+                warUpdatedBy = state.updatedBy || '';
+                warViewerCanManage = !!state.viewerCanManage;
+                backendStatus = 'War state loaded';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            warLoading = false;
+            backendStatus = 'War state failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    }
+
+    function setWarState(enabled) {
+        if (!syncSecret) {
+            window.alert('Enter Sync Secret first.');
+            return;
+        }
+        apiRequest('POST', '/api/warstack/set-state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload(),
+            enabled: enabled ? 1 : 0
+        }).then(function (data) {
+            var state = data && (data.state || data.warstack);
+            if (state) {
+                warEnabled = !!state.enabled;
+                warUpdatedAt = state.updatedAt || '';
+                warUpdatedBy = state.updatedBy || '';
+                warViewerCanManage = !!state.viewerCanManage;
+                backendStatus = 'War state updated';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            } else {
+                window.alert((data && data.error) ? data.error : 'War state update failed.');
+            }
+        }).catch(function () {
+            window.alert('War state update failed.');
+        });
+    }
+
+    function fetchFinancialSummary() {
+        if (financeLoading || !syncSecret) return Promise.resolve(null);
+        financeLoading = true;
+        return apiRequest('POST', '/api/overview/financial-summary', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            financeLoading = false;
+            var summary = data && data.summary;
+            if (summary) {
+                finVerifiedXanax = Number(summary.verified_xanax_in || 0);
+                finFactionCut = Number(summary.faction_cut_xanax || 0);
+                finPool = Number(summary.insurance_pool_xanax || 0);
+                finReceiptCount = Number(summary.verified_receipts_count || 0);
+                finMemberPayCount = Number(summary.member_payment_verified_count || 0);
+                finPayoutCount = Number(summary.admin_payout_verified_count || 0);
+                backendStatus = 'Payments loaded';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            financeLoading = false;
+            backendStatus = 'Payments failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return null;
+        });
+    }
+
+    function backendAdminLogin() {
         ,
                     url: url,
                     headers: { 'Content-Type': 'application/json' },
