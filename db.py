@@ -81,10 +81,17 @@ class ClaimsStore(BaseStore):
                 """
             )
 
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(status)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_member_id ON claims(memberId)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_is_read ON claims(isRead)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_updated_at ON claims(updatedAt)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS claim_history (
+                    historyId INTEGER PRIMARY KEY AUTOINCREMENT,
+                    claimId TEXT NOT NULL DEFAULT '',
+                    at TEXT NOT NULL DEFAULT '',
+                    text TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS app_settings (
@@ -96,6 +103,13 @@ class ClaimsStore(BaseStore):
                 )
                 """
             )
+
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_member_id ON claims(memberId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_is_read ON claims(isRead)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_updated_at ON claims(updatedAt)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_claim_id ON claim_history(claimId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_at ON claim_history(at)")
             conn.commit()
 
             needed = {
@@ -166,7 +180,6 @@ class ClaimsStore(BaseStore):
             "decision": str(claim.get("decision", "")),
             "updatedAt": str(claim.get("updatedAt", "")) or now_iso(),
             "createdAt": str(claim.get("createdAt", "")) or now_iso(),
-
             "armedAt": str(claim.get("armedAt", "")),
             "armedPlan": str(claim.get("armedPlan", "")),
             "armedStage": str(claim.get("armedStage", "")),
@@ -176,39 +189,19 @@ class ClaimsStore(BaseStore):
             "odDetectedAt": str(claim.get("odDetectedAt", "")),
             "ruleCheck": str(claim.get("ruleCheck", "")),
             "detectStatus": str(claim.get("detectStatus", "")),
-
             "requiredPaymentItem": str(claim.get("requiredPaymentItem", "")),
             "requiredPaymentQty": str(claim.get("requiredPaymentQty", "")),
             "memberPaymentVerified": int(claim.get("memberPaymentVerified", 0) or 0),
             "memberPaymentVerifiedAt": str(claim.get("memberPaymentVerifiedAt", "")),
             "memberPaymentProof": str(claim.get("memberPaymentProof", "")),
-
             "adminReceiptVerified": int(claim.get("adminReceiptVerified", 0) or 0),
             "adminReceiptVerifiedAt": str(claim.get("adminReceiptVerifiedAt", "")),
             "adminReceiptProof": str(claim.get("adminReceiptProof", "")),
-
             "adminPayoutVerified": int(claim.get("adminPayoutVerified", 0) or 0),
             "adminPayoutVerifiedAt": str(claim.get("adminPayoutVerifiedAt", "")),
             "adminPayoutProof": str(claim.get("adminPayoutProof", "")),
-
             "isRead": int(claim.get("isRead", 0) or 0),
-            "isNotified": int(claim.get("isNotified", 0) or 0),
-            "notifiedAt": str(claim.get("notifiedAt", "")),
-
-            "reviewedBy": str(claim.get("reviewedBy", "")),
-            "paidAt": str(claim.get("paidAt", "")),
-            "completedAt": str(claim.get("completedAt", "")),
-            "locked": int(claim.get("locked", 0) or 0),
-        }
-
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO claims (
-                    id, member, memberId, plan, status, note, loss, proof, stack, payout,
-                    decision, updatedAt, createdAt, armedAt, armedPlan, armedStage, armedEnergy,
-                    armedBoosterCd, expiresAt, odDetectedAt, ruleCheck, detectStatus,
-                    requiredPaymentItem, requiredPaymentQty, memberPaymentVerified, memberPaymentVerifiedAt, memberPaymentProof,
+            "isrPaymentVerifiedAt, memberPaymentProof,
                     adminReceiptVerified, adminReceiptVerifiedAt, adminReceiptProof,
                     adminPayoutVerified, adminPayoutVerifiedAt, adminPayoutProof,
                     isRead, isNotified, notifiedAt, reviewedBy, paidAt, completedAt, locked
