@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      2.9.1
+// @version      2.9.0
 // @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -3223,4 +3223,4 @@
         boot();
     }
 })();
-
+Copy everything in the code block and paste it into Torn PDA.
