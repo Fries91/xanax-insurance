@@ -318,6 +318,246 @@ class ClaimsStore(BaseStore):
 
     @staticmethod
     def _qty_to_int(value: Any) -> int:
+        text = str(value or "").strip()
+        if not text:
+            return 0
+        match = re.search(r"-?\d+", text.replace(",", ""))
+        return int(match.group(0)) if match else 0
+
+    def get_financial_summary(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    member,
+                    memberId,
+                    plan,
+                    status,
+                    requiredPaymentItem,
+                    requiredPaymentQty,
+                    memberPaymentVerified,
+                    adminReceiptVerified,
+                    adminPayoutVerified,
+                    updatedAt,
+                    createdAt
+                FROM claims
+                ORDER BY updatedAt DESC, rowid DESC
+                """
+            ).fetchall()
+
+        total_verified_xanax = 0
+        verified_receipts_count = 0
+        member_verified_count = 0
+        payout_verified_count = 0
+        plan_totals: dict[str, int] = {}
+
+        for row in rows:
+            item = str(row["requiredPaymentItem"] or "").strip().lower()
+            qty = self._qty_to_int(row["requiredPaymentQty"])
+            if item != "xanax" or qty <= 0:
+                continue
+
+            plan_name = str(row["plan"] or "Unknown").strip() or "Unknown"
+
+            if int(row["memberPaymentVerified"] or 0):
+                member_verified_count += 1
+
+            if int(row["adminPayoutVerified"] or 0):
+                payout_verified_count += 1
+
+            if not int(row["adminReceiptVerified"] or 0):
+                continue
+
+            verified_receipts_count += 1
+            total_verified_xanax += qty
+            plan_totals[plan_name] = plan_totals.get(plan_name, 0) + qty
+
+        faction_share = round(total_verified_xanax * 0.15, 2)
+        insurance_pool = round(total_verified_xanax - faction_share, 2)
+
+        return {
+            "verified_xanax_in": total_verified_xanax,
+            "faction_cut_percent": 15,
+            "faction_cut_xanax": faction_share,
+            "insurance_pool_xanax": insurance_pool,
+            "verified_receipts_count": verified_receipts_count,
+            "member_payment_verified_count": member_verified_count,
+            "admin_payout_verified_count": payout_verified_count,
+            "plan_totals": dict(sorted(plan_totals.items())),
+        }
+
+    def get_setting(self, key: str, default: str = "") -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT key, value, updatedAt, updatedBy, updatedById FROM app_settings WHERE key = ?",
+                (str(key),),
+            ).fetchone()
+            if not row:
+                return {
+                    "key": str(key),
+                    "value": default,
+                    "updatedAt": "",
+                    "updatedBy": "",
+                    "updatedById": "",
+                }
+            return dict(row)
+
+    def set_setting(self, key: str, value: str, updated_by: str = "", updated_by_id: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO app_settings (key, value, updatedAt, updatedBy, updatedById)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    updatedAt=excluded.updatedAt,
+                    updatedBy=excluded.updatedBy,
+                    updatedById=excluded.updatedById
+                """,
+                (str(key), str(value), now_iso(), str(updated_by or ""), str(updated_by_id or "")),
+            )
+            conn.commit()
+
+    def get_warstack_state(self) -> dict[str, Any]:
+        row = self.get_setting("warstack_enabled", "0")
+        value = str(row.get("value", "0")).strip().lower()
+        enabled = 1 if value in {"1", "true", "yes", "on"} else 0
+        return {
+            "enabled": enabled,
+            "updatedAt": str(row.get("updatedAt", "")),
+            "updatedBy": str(row.get("updatedBy", "")),
+            "updatedById": str(row.get("updatedById", "")),
+        }
+
+    def set_warstack_state(self, enabled: int | bool, updated_by: str = "", updated_by_id: str = "") -> None:
+        self.set_setting(
+            "warstack_enabled",
+            "1" if int(enabled or 0) else "0",
+            updated_by=updated_by,
+            updated_by_id=updated_by_id,
+        )
+
+
+class ClaimHistoryStore(BaseStore):
+    def __init__(self, db_path: str) -> None:
+        super().__init__(db_path)
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+               rPaymentVerifiedAt, memberPaymentProof,
+                    adminReceiptVerified, adminReceiptVerifiedAt, adminReceiptProof,
+                    adminPayoutVerified, adminPayoutVerifiedAt, adminPayoutProof,
+                    isRead, isNotified, notifiedAt, reviewedBy, paidAt, completedAt, locked
+                )
+                VALUES (
+                    :id, :member, :memberId, :plan, :status, :note, :loss, :proof, :stack, :payout,
+                    :decision, :updatedAt, :createdAt, :armedAt, :armedPlan, :armedStage, :armedEnergy,
+                    :armedBoosterCd, :expiresAt, :odDetectedAt, :ruleCheck, :detectStatus,
+                    :requiredPaymentItem, :requiredPaymentQty, :memberPaymentVerified, :memberPaymentVerifiedAt, :memberPaymentProof,
+                    :adminReceiptVerified, :adminReceiptVerifiedAt, :adminReceiptProof,
+                    :adminPayoutVerified, :adminPayoutVerifiedAt, :adminPayoutProof,
+                    :isRead, :isNotified, :notifiedAt, :reviewedBy, :paidAt, :completedAt, :locked
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    member=excluded.member,
+                    memberId=excluded.memberId,
+                    plan=excluded.plan,
+                    status=excluded.status,
+                    note=excluded.note,
+                    loss=excluded.loss,
+                    proof=excluded.proof,
+                    stack=excluded.stack,
+                    payout=excluded.payout,
+                    decision=excluded.decision,
+                    updatedAt=excluded.updatedAt,
+                    createdAt=COALESCE(NULLIF(claims.createdAt, ''), excluded.createdAt),
+                    armedAt=excluded.armedAt,
+                    armedPlan=excluded.armedPlan,
+                    armedStage=excluded.armedStage,
+                    armedEnergy=excluded.armedEnergy,
+                    armedBoosterCd=excluded.armedBoosterCd,
+                    expiresAt=excluded.expiresAt,
+                    odDetectedAt=excluded.odDetectedAt,
+                    ruleCheck=excluded.ruleCheck,
+                    detectStatus=excluded.detectStatus,
+                    requiredPaymentItem=excluded.requiredPaymentItem,
+                    requiredPaymentQty=excluded.requiredPaymentQty,
+                    memberPaymentVerified=excluded.memberPaymentVerified,
+                    memberPaymentVerifiedAt=excluded.memberPaymentVerifiedAt,
+                    memberPaymentProof=excluded.memberPaymentProof,
+                    adminReceiptVerified=excluded.adminReceiptVerified,
+                    adminReceiptVerifiedAt=excluded.adminReceiptVerifiedAt,
+                    adminReceiptProof=excluded.adminReceiptProof,
+                    adminPayoutVerified=excluded.adminPayoutVerified,
+                    adminPayoutVerifiedAt=excluded.adminPayoutVerifiedAt,
+                    adminPayoutProof=excluded.adminPayoutProof,
+                    isRead=excluded.isRead,
+                    isNotified=excluded.isNotified,
+                    notifiedAt=excluded.notifiedAt,
+                    reviewedBy=excluded.reviewedBy,
+                    paidAt=excluded.paidAt,
+                    completedAt=excluded.completedAt,
+                    locked=excluded.locked
+                """,
+                payload,
+            )
+            conn.commit()
+
+    def get_claim(self, claim_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM claims WHERE id = ?", (claim_id,)).fetchone()
+            return dict(row) if row else None
+
+    def list_claims(
+        self,
+        unread_only: bool = False,
+        member_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM claims WHERE 1=1"
+        params: list[Any] = []
+
+        if unread_only:
+            query += " AND isRead = 0"
+        if member_id:
+            query += " AND memberId = ?"
+            params.append(member_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+
+        query += " ORDER BY updatedAt DESC, rowid DESC"
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def mark_read(self, claim_id: str, is_read: bool = True) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE claims SET isRead = ?, updatedAt = ? WHERE id = ?",
+                (1 if is_read else 0, now_iso(), claim_id),
+            )
+            conn.commit()
+
+    def mark_notified(self, claim_id: str, is_notified: bool = True, notified_at: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE claims
+                SET isNotified = ?, notifiedAt = ?, updatedAt = ?
+                WHERE id = ?
+                """,
+                (1 if is_notified else 0, notified_at or "", now_iso(), claim_id),
+            )
+            conn.commit()
+
+    @staticmethod
+    def _qty_to_int(value: Any) -> int:
         text = str(value or '').strip()
         if not text:
             return 0
