@@ -19,11 +19,7 @@ FACTION_ID = str(os.getenv("FACTION_ID", "")).strip()
 ADMIN_PLAYER_ID = str(os.getenv("ADMIN_PLAYER_ID", "")).strip()
 TORN_API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
-WARSTACK_MANAGER_IDS = {
-    x.strip()
-    for x in str(os.getenv("WARSTACK_MANAGER_IDS", "")).split(",")
-    if x.strip()
-}
+WARSTACK_MANAGER_IDS = {x.strip() for x in str(os.getenv("WARSTACK_MANAGER_IDS", "")).split(",") if x.strip()}
 
 
 def now_iso() -> str:
@@ -35,6 +31,302 @@ def json_error(message: str, status: int = 400):
 
 
 def corsify(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return resp
+
+
+@app.after_request
+def after_request(resp):
+    return corsify(resp)
+
+
+def ok_options():
+    return corsify(jsonify({"ok": True}))
+
+
+def check_secret(payload: dict[str, Any]) -> bool:
+    return str((payload or {}).get("secret", "")).strip() == SYNC_SECRET
+
+
+def normalize_text(value: Any) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def normalize_bool(value: Any) -> int:
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, (int, float)):
+        return 1 if value else 0
+    return 1 if str(value).strip().lower() in {"1", "true", "yes", "y", "on"} else 0
+
+
+def parse_torn_key_info(data: dict[str, Any]) -> dict[str, str]:
+    user_obj = data.get("user") or {}
+    faction_obj = data.get("faction") or {}
+    player_id = normalize_text(user_obj.get("id") or user_obj.get("player_id") or data.get("player_id"))
+    player_name = normalize_text(user_obj.get("name") or user_obj.get("player_name") or data.get("player_name"))
+    faction_id = normalize_text(user_obj.get("faction_id") or faction_obj.get("id") or data.get("faction_id"))
+    faction_name = normalize_text(faction_obj.get("name") or data.get("faction_name"))
+    position = normalize_text(
+        user_obj.get("position")
+        or user_obj.get("faction_position")
+        or faction_obj.get("position")
+        or faction_obj.get("rank")
+        or data.get("position")
+        or data.get("faction_position")
+    )
+    return {
+        "player_id": player_id,
+        "player_name": player_name or (f"Player {player_id}" if player_id else ""),
+        "faction_id": faction_id,
+        "faction_name": faction_name,
+        "position": position,
+    }
+
+
+def torn_lookup_user(api_key: str) -> dict[str, Any] | None:
+    if not api_key:
+        return None
+    url = f"{TORN_API_BASE}/v2/key/info"
+    try:
+        resp = requests.get(url, headers={"Authorization": f"ApiKey {api_key}"}, timeout=REQUEST_TIMEOUT)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def role_from_position(position: str) -> str:
+    p = normalize_text(position).lower()
+    if not p:
+        return "member"
+    if "co" in p and "leader" in p:
+        return "co-leader"
+    if "leader" in p:
+        return "leader"
+    return "member"
+
+
+def verify_admin_by_key(api_key: str):
+    data = torn_lookup_user(api_key)
+    if not data:
+        return None, "admin login failed"
+    info = parse_torn_key_info(data)
+    if not info["player_id"]:
+        return None, "admin login failed"
+    if ADMIN_PLAYER_ID and info["player_id"] != ADMIN_PLAYER_ID:
+        return None, "not configured admin"
+    return {
+        "player_id": info["player_id"],
+        "name": info["player_name"],
+        "faction_id": info["faction_id"],
+        "faction_name": info["faction_name"],
+        "position": info["position"],
+        "role": "admin",
+    }, None
+
+
+def verify_faction_member(auth: dict[str, Any]):
+    api_key = normalize_text(auth.get("api_key"))
+    faction_id_lock = normalize_text(auth.get("faction_id")) or FACTION_ID
+    data = torn_lookup_user(api_key)
+    if not data:
+        return None, "member login failed"
+    info = parse_torn_key_info(data)
+    if not info["player_id"]:
+        return None, "member login failed"
+    if faction_id_lock and info["faction_id"] != faction_id_lock:
+        return None, "wrong faction"
+    return {
+        "player_id": info["player_id"],
+        "name": info["player_name"],
+        "faction_id": info["faction_id"],
+        "faction_name": info["faction_name"],
+        "position": info["position"],
+        "role": role_from_position(info["position"]),
+    }, None
+
+
+def verify_any_logged_in_user(auth: dict[str, Any]):
+    admin_key = normalize_text(auth.get("admin_api_key") or auth.get("api_key"))
+    if admin_key:
+        admin_user, admin_err = verify_admin_by_key(admin_key)
+        if admin_user:
+            return admin_user, None
+        if normalize_text(auth.get("admin_api_key")):
+            return None, admin_err
+    return verify_faction_member(auth)
+
+
+def user_can_manage_warstack(user: dict[str, Any]) -> bool:
+    role = normalize_text(user.get("role")).lower()
+    player_id = normalize_text(user.get("player_id"))
+    return role in {"admin", "leader", "co-leader"} or player_id in WARSTACK_MANAGER_IDS
+
+
+def build_warstack_state(user: dict[str, Any]) -> dict[str, Any]:
+    state = claims.get_warstack_state()
+    state["viewerCanManage"] = user_can_manage_warstack(user)
+    state["viewerRole"] = normalize_text(user.get("role"))
+    state["viewerName"] = normalize_text(user.get("name"))
+    return state
+
+
+def clean_claim_payload(claim: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any]:
+    existing = existing or {}
+    merged = {**existing, **(claim or {})}
+    text_fields = [
+        "id", "member", "memberId", "plan", "status", "note", "loss", "proof", "stack", "payout",
+        "decision", "updatedAt", "createdAt", "armedAt", "armedPlan", "armedStage", "armedEnergy",
+        "armedBoosterCd", "expiresAt", "odDetectedAt", "ruleCheck", "detectStatus", "requiredPaymentItem",
+        "requiredPaymentQty", "memberPaymentVerifiedAt", "memberPaymentProof", "adminReceiptVerifiedAt",
+        "adminReceiptProof", "adminPayoutVerifiedAt", "adminPayoutProof", "notifiedAt", "reviewedBy",
+        "paidAt", "completedAt"
+    ]
+    bool_fields = [
+        "memberPaymentVerified", "adminReceiptVerified", "adminPayoutVerified", "isRead", "isNotified", "locked"
+    ]
+    clean: dict[str, Any] = {}
+    for key in text_fields:
+        clean[key] = normalize_text(merged.get(key))
+    for key in bool_fields:
+        clean[key] = normalize_bool(merged.get(key))
+    clean["updatedAt"] = clean["updatedAt"] or now_iso()
+    clean["createdAt"] = clean["createdAt"] or normalize_text(existing.get("createdAt")) or now_iso()
+    return clean
+
+
+@app.route("/api/health", methods=["GET", "OPTIONS"])
+def health():
+    if request.method == "OPTIONS":
+        return ok_options()
+    return jsonify({"ok": True, "time": now_iso()})
+
+
+@app.route("/api/auth/admin-key-login", methods=["POST", "OPTIONS"])
+def auth_admin_key_login():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    user, err = verify_admin_by_key(normalize_text(payload.get("api_key")))
+    if not user:
+        return json_error(err or "admin login failed", 403)
+    return jsonify({"ok": True, "user": user})
+
+
+@app.route("/api/auth/faction-login", methods=["POST", "OPTIONS"])
+def auth_faction_login():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    user, err = verify_faction_member(payload)
+    if not user:
+        return json_error(err or "faction login failed", 403)
+    return jsonify({"ok": True, "user": user})
+
+
+@app.route("/api/claims/pull", methods=["POST", "OPTIONS"])
+def pull_claims():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    unread_only = bool(normalize_bool(payload.get("unreadOnly")))
+    member_id = normalize_text(payload.get("memberId")) or None
+    status = normalize_text(payload.get("status")) or None
+    return jsonify({"ok": True, "claims": claims.list_claims(unread_only=unread_only, member_id=member_id, status=status)})
+
+
+@app.route("/api/overview/financial-summary", methods=["POST", "OPTIONS"])
+def overview_financial_summary():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    return jsonify({
+        "ok": True,
+        "summary": claims.get_financial_summary(),
+        "viewer": {"player_id": user["player_id"], "name": user["name"], "role": user["role"]},
+    })
+
+
+@app.route("/api/warstack/state", methods=["POST", "OPTIONS"])
+def warstack_state():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    return jsonify({"ok": True, "state": build_warstack_state(user), "warstack": build_warstack_state(user)})
+
+
+@app.route("/api/warstack/set-state", methods=["POST", "OPTIONS"])
+def warstack_set_state():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    if not user_can_manage_warstack(user):
+        return json_error("only leaders, co-leaders, admin, or configured managers may change this state", 403)
+    claims.set_warstack_state(
+        enabled=normalize_bool(payload.get("enabled")),
+        updated_by=normalize_text(user.get("name")),
+        updated_by_id=normalize_text(user.get("player_id")),
+    )
+    return jsonify({"ok": True, "state": build_warstack_state(user), "warstack": build_warstack_state(user)})
+
+
+@app.route("/api/claims/history", methods=["POST", "OPTIONS"])
+def claim_history():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    claim_id = normalize_text(payload.get("claim_id"))
+    if claim_id:
+        return jsonify({"ok": True, "history": history.list_history(claim_id)})
+    limit = int(payload.get("limit", 100) or 100)
+    return jsonify({"ok": True, "history": history.list_recent(limit=limit)})
+
+
+@app.route("/api/claims/push", methods=["POST", "OPTIONS"])
+def push_claim():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+
+    action = normalize_text(payload.get("action"))
+    auth = payload.get("auth") or {}
+    claim = payload.get("claim") or {}
+    claim_id = normalize_text(claim.get("id"))
+    if not claim_id:
+        return json_error("def corsify(resp):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
