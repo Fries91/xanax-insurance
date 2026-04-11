@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Sinner's Insurance 7DS PDA Rebuild
+// @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      3.1.0
-// @description  PDA/mobile-only Sinner's Insurance with War tab, settings login, and payments
+// @version      2.9.0
+// @description  Sinner's Insurance 
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
 // @run-at       document-idle
@@ -15,89 +15,45 @@
 (function () {
     'use strict';
 
-    var launcher = null;
+    var launcherBar = null;
     var overlay = null;
-    var backdrop = null;
     var remountTimer = null;
+    var activeTab = 'overview';
+    var selectedPlan = (typeof GM_getValue === 'function' ? GM_getValue('si_selected_plan', 'None') : 'None');
+    var sessionRole = (typeof GM_getValue === 'function' ? GM_getValue('si_session_role', 'guest') : 'guest');
+    var sessionName = (typeof GM_getValue === 'function' ? GM_getValue('si_session_name', 'Guest') : 'Guest');
+    var claimStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_status', 'Not submitted') : 'Not submitted');
+    var claimNote = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_note', '') : '');
+    var claimLoss = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_loss', '') : '');
+    var claimProof = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_proof', '') : '');
+    var claimStack = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_stack', '') : '');
+    var claimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_history', '[]') : '[]');
+    var claimId = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_id', '') : '');
+    var payoutAmount = (typeof GM_getValue === 'function' ? GM_getValue('si_payout_amount', '') : '');
+    var decisionNote = (typeof GM_getValue === 'function' ? GM_getValue('si_decision_note', '') : '');
+    var claimsDb = (typeof GM_getValue === 'function' ? GM_getValue('si_claims_db', '[]') : '[]');
+    var selectedClaimId = (typeof GM_getValue === 'function' ? GM_getValue('si_selected_claim_id', '') : '');
+    var claimFilterStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_status', 'all') : 'all');
+    var claimFilterMember = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_filter_member', '') : '');
+    var claimSortMode = (typeof GM_getValue === 'function' ? GM_getValue('si_claim_sort_mode', 'newest') : 'newest');
+    var apiBase = (typeof GM_getValue === 'function' ? GM_getValue('si_api_base', 'https://xanax-insurance.onrender.com') : 'https://xanax-insurance.onrender.com');
+    var syncSecret = (typeof GM_getValue === 'function' ? GM_getValue('si_sync_secret', '') : '');
+    var backendStatus = (typeof GM_getValue === 'function' ? GM_getValue('si_backend_status', 'Not tested') : 'Not tested');
+    var lastSyncAt = (typeof GM_getValue === 'function' ? GM_getValue('si_last_sync_at', 'Never') : 'Never');
+    var serverClaimHistory = (typeof GM_getValue === 'function' ? GM_getValue('si_server_claim_history', '[]') : '[]');
+    var adminApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_admin_api_key', '') : '');
+    var memberApiKey = (typeof GM_getValue === 'function' ? GM_getValue('si_member_api_key', '') : '');
+    var factionIdLock = (typeof GM_getValue === 'function' ? GM_getValue('si_faction_id_lock', '') : '');
+    var authMode = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_mode', 'local') : 'local');
+    var authUser = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_user', '') : '');
+    var authPass = (typeof GM_getValue === 'function' ? GM_getValue('si_auth_pass', '') : '');
 
-    var activeTab = readVal('si_active_tab', 'overview');
-    var selectedPlan = readVal('si_selected_plan', 'None');
-    var sessionRole = readVal('si_session_role', 'guest');
-    var sessionName = readVal('si_session_name', 'Guest');
-
-    var claimId = readVal('si_claim_id', '');
-    var selectedClaimId = readVal('si_selected_claim_id', '');
-    var claimStatus = readVal('si_claim_status', 'Not submitted');
-    var claimNote = readVal('si_claim_note', '');
-    var claimLoss = readVal('si_claim_loss', '');
-    var claimProof = readVal('si_claim_proof', '');
-    var claimStack = readVal('si_claim_stack', '');
-    var payoutAmount = readVal('si_payout_amount', '');
-    var decisionNote = readVal('si_decision_note', '');
-    var claimsDb = readVal('si_claims_db', '[]');
-    var claimHistory = readVal('si_claim_history', '[]');
-
-    var apiBase = readVal('si_api_base', 'https://xanax-insurance.onrender.com');
-    var syncSecret = readVal('si_sync_secret', '');
-    var backendStatus = readVal('si_backend_status', 'Not tested');
-    var lastSyncAt = readVal('si_last_sync_at', 'Never');
-    var adminApiKey = readVal('si_admin_api_key', '');
-    var memberApiKey = readVal('si_member_api_key', '');
-    var factionIdLock = readVal('si_faction_id_lock', '');
-    var authMode = readVal('si_auth_mode', 'local');
-
-    var warEnabled = readVal('si_war_enabled', false);
-    var warUpdatedAt = readVal('si_war_updated_at', '');
-    var warUpdatedBy = readVal('si_war_updated_by', '');
-    var warViewerCanManage = readVal('si_war_can_manage', false);
-
-    var finVerifiedXanax = readVal('si_fin_verified_xanax', 0);
-    var finFactionCut = readVal('si_fin_faction_cut', 0);
-    var finPool = readVal('si_fin_pool', 0);
-    var finReceiptCount = readVal('si_fin_receipts', 0);
-    var finMemberPayCount = readVal('si_fin_member_pay', 0);
-    var finPayoutCount = readVal('si_fin_payout_count', 0);
-
-    var historyLoading = false;
-    var warLoading = false;
-    var financeLoading = false;
-
-    var PLANS = [
-        {
-            name: 'Pride Sin',
-            coverage: '6 Xanax',
-            payment: '2 Xanax',
-            window: '20 mins',
-            rule: 'Can start with any amount of energy.'
-        },
-        {
-            name: 'Wrath Sin',
-            coverage: 'Stage based',
-            payment: '5 / 10 / 15 / 20 Xanax',
-            window: '1 hour',
-            rule: 'Must follow stage rules and stack type.'
-        },
-        {
-            name: 'Envy Sin',
-            coverage: '25 Xanax + 3 E-DVDs',
-            payment: '2 Xanax',
-            window: '30 mins',
-            rule: 'Happy jump style coverage.'
-        }
-    ];
-
-    function readVal(key, fallback) {
-        try {
-            if (typeof GM_getValue === 'function') return GM_getValue(key, fallback);
-        } catch (e) {}
-        return fallback;
-    }
-
-    function writeVal(key, value) {
-        try {
-            if (typeof GM_setValue === 'function') GM_setValue(key, value);
-        } catch (e) {}
-    }
+    var TAB_LABELS = {
+        overview: 'Overview',
+        plans: 'Plans',
+        claims: 'Claims',
+        settings: 'Settings'
+    };
 
     function esc(value) {
         return String(value == null ? '' : value)
@@ -108,6 +64,39 @@
             .replace(/'/g, '&#39;');
     }
 
+    function saveSession() {
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('si_selected_plan', selectedPlan || 'None');
+            GM_setValue('si_session_role', sessionRole || 'guest');
+            GM_setValue('si_session_name', sessionName || 'Guest');
+            GM_setValue('si_claim_status', claimStatus || 'Not submitted');
+            GM_setValue('si_claim_note', claimNote || '');
+            GM_setValue('si_claim_loss', claimLoss || '');
+            GM_setValue('si_claim_proof', claimProof || '');
+            GM_setValue('si_claim_stack', claimStack || '');
+            GM_setValue('si_claim_history', claimHistory || '[]');
+            GM_setValue('si_claim_id', claimId || '');
+            GM_setValue('si_payout_amount', payoutAmount || '');
+            GM_setValue('si_decision_note', decisionNote || '');
+            GM_setValue('si_claims_db', claimsDb || '[]');
+            GM_setValue('si_selected_claim_id', selectedClaimId || '');
+            GM_setValue('si_claim_filter_status', claimFilterStatus || 'all');
+            GM_setValue('si_claim_filter_member', claimFilterMember || '');
+            GM_setValue('si_claim_sort_mode', claimSortMode || 'newest');
+            GM_setValue('si_api_base', apiBase || '');
+            GM_setValue('si_sync_secret', syncSecret || '');
+            GM_setValue('si_backend_status', backendStatus || 'Not tested');
+            GM_setValue('si_last_sync_at', lastSyncAt || 'Never');
+            GM_setValue('si_server_claim_history', serverClaimHistory || '[]');
+            GM_setValue('si_admin_api_key', adminApiKey || '');
+            GM_setValue('si_member_api_key', memberApiKey || '');
+            GM_setValue('si_faction_id_lock', factionIdLock || '');
+            GM_setValue('si_auth_mode', authMode || 'local');
+            GM_setValue('si_auth_user', authUser || '');
+            GM_setValue('si_auth_pass', authPass || '');
+        }
+    }
+
     function isAdmin() {
         return sessionRole === 'admin';
     }
@@ -116,122 +105,175 @@
         return sessionRole === 'member' || sessionRole === 'admin';
     }
 
-    function saveSession() {
-        writeVal('si_active_tab', activeTab || 'overview');
-        writeVal('si_selected_plan', selectedPlan || 'None');
-        writeVal('si_session_role', sessionRole || 'guest');
-        writeVal('si_session_name', sessionName || 'Guest');
+    function loginAs(role) {
+        var promptLabel = role === 'admin' ? 'Enter admin name' : 'Enter member name';
+        var name = window.prompt(promptLabel, sessionName && sessionName !== 'Guest' ? sessionName : '');
+        if (!name) return;
 
-        writeVal('si_claim_id', claimId || '');
-        writeVal('si_selected_claim_id', selectedClaimId || '');
-        writeVal('si_claim_status', claimStatus || 'Not submitted');
-        writeVal('si_claim_note', claimNote || '');
-        writeVal('si_claim_loss', claimLoss || '');
-        writeVal('si_claim_proof', claimProof || '');
-        writeVal('si_claim_stack', claimStack || '');
-        writeVal('si_payout_amount', payoutAmount || '');
-        writeVal('si_decision_note', decisionNote || '');
-        writeVal('si_claims_db', claimsDb || '[]');
-        writeVal('si_claim_history', claimHistory || '[]');
+        var passLabel = role === 'admin' ? 'Enter admin passcode' : 'Enter member passcode';
+        var pass = window.prompt(passLabel, '');
+        if (pass === null) return;
 
-        writeVal('si_api_base', apiBase || '');
-        writeVal('si_sync_secret', syncSecret || '');
-        writeVal('si_backend_status', backendStatus || 'Not tested');
-        writeVal('si_last_sync_at', lastSyncAt || 'Never');
-        writeVal('si_admin_api_key', adminApiKey || '');
-        writeVal('si_member_api_key', memberApiKey || '');
-        writeVal('si_faction_id_lock', factionIdLock || '');
-        writeVal('si_auth_mode', authMode || 'local');
+        if (role === 'admin') {
+            if (pass !== 'wrathadmin') {
+                window.alert('Admin login failed.');
+                return;
+            }
+        } else {
+            if (pass !== 'sinsmember') {
+                window.alert('Member login failed.');
+                return;
+            }
+        }
 
-        writeVal('si_war_enabled', !!warEnabled);
-        writeVal('si_war_updated_at', warUpdatedAt || '');
-        writeVal('si_war_updated_by', warUpdatedBy || '');
-        writeVal('si_war_can_manage', !!warViewerCanManage);
-
-        writeVal('si_fin_verified_xanax', Number(finVerifiedXanax || 0));
-        writeVal('si_fin_faction_cut', Number(finFactionCut || 0));
-        writeVal('si_fin_pool', Number(finPool || 0));
-        writeVal('si_fin_receipts', Number(finReceiptCount || 0));
-        writeVal('si_fin_member_pay', Number(finMemberPayCount || 0));
-        writeVal('si_fin_payout_count', Number(finPayoutCount || 0));
+        sessionRole = role;
+        sessionName = String(name).trim() || (role === 'admin' ? 'Admin' : 'Member');
+        saveSession();
+        renderOverlay();
     }
 
-    function parseJson(text, fallback) {
+    function logoutSession() {
+        sessionRole = 'guest';
+        sessionName = 'Guest';
+        saveSession();
+        renderOverlay();
+    }
+
+    function submitClaim() {
+        if (!isMember()) {
+            window.alert('Member login required before submitting a claim.');
+            return;
+        }
+        if (!selectedPlan || selectedPlan === 'None') {
+            window.alert('Select a plan first before submitting a claim.');
+            return;
+        }
+        if (!claimNote.trim() || !claimLoss.trim() || !claimProof.trim() || !claimStack.trim()) {
+            window.alert('Fill in all claim fields before submitting.');
+            return;
+        }
+        if (!stackMatchesPlan(selectedPlan, claimStack)) {
+            window.alert('Stack type does not match the selected plan rule: ' + getPlanRuleText(selectedPlan));
+            return;
+        }
+        if (!claimId) claimId = makeClaimId();
+        selectedClaimId = claimId;
+        claimStatus = 'Pending review';
+        upsertCurrentClaimRecord();
+        addClaimHistoryEntry((sessionName || 'Member') + ' submitted claim ' + claimId + ' for ' + (selectedPlan || 'No plan') + '.');
+        saveSession();
+        pushCurrentClaimToBackend();
+        activeTab = 'claims';
+        renderOverlay();
+    }
+
+    function getStatusSortRank(status) {
+        var s = String(status || '');
+        if (s === 'Pending review') return 1;
+        if (s === 'Under review') return 2;
+        if (s === 'Approved') return 3;
+        if (s === 'Denied') return 4;
+        if (s === 'Paid') return 5;
+        return 99;
+    }
+
+    function sortClaimsItems(items) {
+        var arr = items.slice();
+        arr.sort(function (a, b) {
+            var mode = String(claimSortMode || 'newest');
+
+            if (mode === 'oldest') {
+                return String(a && a.id || '').localeCompare(String(b && b.id || ''));
+            }
+            if (mode === 'member_az') {
+                var byMember = String(a && a.member || '').localeCompare(String(b && b.member || ''));
+                if (byMember !== 0) return byMember;
+                return String(b && b.id || '').localeCompare(String(a && a.id || ''));
+            }
+            if (mode === 'status') {
+                var byStatus = getStatusSortRank(a && a.status).valueOf() - getStatusSortRank(b && b.status).valueOf();
+                if (byStatus !== 0) return byStatus;
+                return String(b && b.id || '').localeCompare(String(a && a.id || ''));
+            }
+            return String(b && b.id || '').localeCompare(String(a && a.id || ''));
+        });
+        return arr;
+    }
+
+    function getFilteredClaimsDbItems() {
+        var items = getClaimsDbItems();
+        var filtered = items.filter(function (item) {
+            if (!item) return false;
+            var statusOk = claimFilterStatus === 'all' || String(item.status || '') === String(claimFilterStatus || '');
+            var memberNeedle = String(claimFilterMember || '').trim().toLowerCase();
+            var memberHay = String(item.member || '').toLowerCase();
+            var memberOk = !memberNeedle || memberHay.indexOf(memberNeedle) >= 0;
+            return statusOk && memberOk;
+        });
+
+        filtered = sortClaimsItems(filtered);
+
+        if (isMember() && !isAdmin()) {
+            return filtered.filter(function (item) {
+                return String(item && item.member || '').toLowerCase() === String(sessionName || '').toLowerCase();
+            });
+        }
+
+        return filtered;
+    }
+
+    function updateClaimFilters() {
+        var statusEl = overlay && overlay.querySelector('#si-claim-filter-status');
+        var memberEl = overlay && overlay.querySelector('#si-claim-filter-member');
+        var sortEl = overlay && overlay.querySelector('#si-claim-sort-mode');
+        if (statusEl) claimFilterStatus = statusEl.value || 'all';
+        if (memberEl) claimFilterMember = (memberEl.value || '').trim();
+        if (sortEl) claimSortMode = sortEl.value || 'newest';
+        saveSession();
+
+        var filtered = getFilteredClaimsDbItems();
+        if (filtered.length) {
+            var stillVisible = filtered.some(function (item) { return item && item.id === selectedClaimId; });
+            if (!stillVisible) {
+                selectedClaimId = filtered[0].id || '';
+                syncCurrentFromSelectedClaim();
+                saveSession();
+            }
+        }
+        renderOverlay();
+    }
+
+    function getClaimsDbItems() {
         try {
-            var parsed = JSON.parse(text || '');
-            return parsed;
+            var arr = JSON.parse(claimsDb || '[]');
+            return Array.isArray(arr) ? arr : [];
         } catch (e) {
-            return fallback;
+            return [];
         }
     }
 
-    function getClaims() {
-        var arr = parseJson(claimsDb || '[]', []);
-        return Array.isArray(arr) ? arr : [];
-    }
-
-    function saveClaims(arr) {
+    function saveClaimsDbItems(arr) {
         claimsDb = JSON.stringify(Array.isArray(arr) ? arr : []);
         saveSession();
     }
 
-    function getHistory() {
-        var arr = parseJson(claimHistory || '[]', []);
-        return Array.isArray(arr) ? arr : [];
-    }
-
-    function saveHistory(arr) {
-        claimHistory = JSON.stringify(Array.isArray(arr) ? arr.slice(0, 30) : []);
-        saveSession();
-    }
-
-    function addHistory(text) {
-        var arr = getHistory();
-        arr.unshift({ at: new Date().toLocaleString(), text: String(text || '') });
-        saveHistory(arr);
-    }
-
-    function makeClaimId() {
-        return 'SIN-' + Date.now().toString().slice(-8);
-    }
-
-    function upsertCurrentClaim() {
-        if (!claimId) return;
-        var items = getClaims();
-        var idx = items.findIndex(function (x) { return x && x.id === claimId; });
-        var rec = {
-            id: claimId,
-            member: sessionName || 'Guest',
-            plan: selectedPlan || 'None',
-            status: claimStatus || 'Not submitted',
-            note: claimNote || '',
-            loss: claimLoss || '',
-            proof: claimProof || '',
-            stack: claimStack || '',
-            payout: payoutAmount || '',
-            decision: decisionNote || '',
-            updatedAt: new Date().toLocaleString()
-        };
-        if (idx >= 0) items[idx] = Object.assign({}, items[idx], rec);
-        else items.unshift(rec);
-        selectedClaimId = claimId;
-        saveClaims(items.slice(0, 60));
-    }
-
-    function getSelectedClaim() {
-        var items = getClaims();
-        if (selectedClaimId) {
-            var found = items.find(function (x) { return x && x.id === selectedClaimId; });
-            if (found) return found;
+    function getSelectedClaimRecord() {
+        var items = getClaimsDbItems();
+        var found = items.find(function (item) { return item && item.id === selectedClaimId; });
+        if (found) return found;
+        if (items.length) {
+            selectedClaimId = items[0].id || '';
+            saveSession();
+            return items[0];
         }
-        return items.length ? items[0] : null;
+        return null;
     }
 
-    function syncFromSelectedClaim() {
-        var rec = getSelectedClaim();
+    function syncCurrentFromSelectedClaim() {
+        var rec = getSelectedClaimRecord();
         if (!rec) return;
-        selectedClaimId = rec.id || '';
         claimId = rec.id || '';
+        selectedClaimId = rec.id || '';
         selectedPlan = rec.plan || selectedPlan || 'None';
         claimStatus = rec.status || 'Not submitted';
         claimNote = rec.note || '';
@@ -242,40 +284,209 @@
         decisionNote = rec.decision || '';
     }
 
-    function stackMatchesPlan(plan, stackText) {
-        var p = String(plan || '').toLowerCase();
-        var s = String(stackText || '').toLowerCase();
-        if (!s) return false;
-        if (p.indexOf('pride') >= 0) return /single|1st|first|one|small/.test(s);
-        if (p.indexOf('wrath') >= 0) return /1st|first|2nd|second|3rd|third|4th|fourth|stage/.test(s);
-        if (p.indexOf('envy') >= 0) return /jump|happy|full/.test(s);
-        return true;
+    function upsertCurrentClaimRecord() {
+        if (!claimId) return;
+        var items = getClaimsDbItems();
+        var idx = items.findIndex(function (item) { return item && item.id === claimId; });
+        var rec = {
+            id: claimId,
+            plan: selectedPlan || 'None',
+            status: claimStatus || 'Not submitted',
+            note: claimNote || '',
+            loss: claimLoss || '',
+            proof: claimProof || '',
+            stack: claimStack || '',
+            payout: payoutAmount || '',
+            decision: decisionNote || '',
+            member: sessionName || 'Guest',
+            updatedAt: new Date().toLocaleString()
+        };
+        if (idx >= 0) items[idx] = rec;
+        else items.unshift(rec);
+        selectedClaimId = claimId;
+        saveClaimsDbItems(items.slice(0, 25));
     }
 
-    function getPlanRuleText(plan) {
-        var match = PLANS.find(function (x) { return x.name === plan; });
-        return match ? match.rule : 'Select a valid plan.';
+    function selectClaimById(id) {
+        selectedClaimId = id || '';
+        syncCurrentFromSelectedClaim();
+        saveSession();
+        renderOverlay();
+        fetchSelectedClaimHistory();
     }
 
-    function getPayoutGuide(plan) {
-        if (plan === 'Pride Sin') return 'Small payout';
-        if (plan === 'Wrath Sin') return 'Mid payout';
-        if (plan === 'Envy Sin') return 'Premium payout';
-        return 'None';
+    function makeClaimId() {
+        return 'SIN-' + Date.now().toString().slice(-8);
     }
 
-    function getStatusClass(status) {
-        var s = String(status || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        return 'status-' + s;
+    function getClaimHistoryItems() {
+        try {
+            var arr = JSON.parse(claimHistory || '[]');
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
     }
 
-    function getMemberClaimSummary() {
-        var items = getClaims();
-        var total = items.length;
-        var pending = 0, approved = 0, denied = 0, paid = 0;
-        var payouts = 0;
-        var names = {};
-        items.forEach(function (x) {
+    function addClaimHistoryEntry(text) {
+        var arr = getClaimHistoryItems();
+        arr.unshift({
+            at: new Date().toLocaleString(),
+            text: text
+        });
+        claimHistory = JSON.stringify(arr.slice(0, 12));
+        saveSession();
+    }
+
+    function updateClaimField(field, value) {
+        if (field === 'note') claimNote = value || '';
+        if (field === 'loss') claimLoss = value || '';
+        if (field === 'proof') claimProof = value || '';
+        if (field === 'stack') claimStack = value || '';
+        if (field === 'payout') payoutAmount = value || '';
+        if (field === 'decision') decisionNote = value || '';
+        upsertCurrentClaimRecord();
+        saveSession();
+    }
+
+    function clearClaimHistory() {
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        claimHistory = '[]';
+        saveSession();
+        renderOverlay();
+    }
+
+    function adminSetClaimStatus(nextStatus) {
+        if (!isAdmin()) {
+            window.alert('Admin login required.');
+            return;
+        }
+        claimStatus = nextStatus;
+        upsertCurrentClaimRecord();
+        addClaimHistoryEntry((sessionName || 'Admin') + ' changed claim ' + (claimId || 'unassigned') + ' status to ' + nextStatus + (decisionNote ? ' | Note: ' + decisionNote : '') + (payoutAmount ? ' | Payout: ' + payoutAmount : '') + '.');
+        saveSession();
+        pushCurrentClaimToBackend();
+        activeTab = 'claims';
+        renderOverlay();
+    }
+
+
+    function apiRequest(method, path, payload) {
+        var url = String(apiBase || '').replace(/\/$/, '') + path;
+
+        if (typeof GM_xmlhttpRequest === 'function') {
+            return new Promise(function (resolve, reject) {
+                GM_xmlhttpRequest({
+                    method: method,
+                    url: url,
+                    headers: { 'Content-Type': 'application/json' },
+                    data: payload ? JSON.stringify(payload) : undefined,
+                    onload: function (res) {
+                        try {
+                            var json = JSON.parse(res.responseText || '{}');
+                            resolve(json);
+                        } catch (e) {
+                            resolve({});
+                        }
+                    },
+                    onerror: reject
+                });
+            });
+        }
+
+        return fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: payload ? JSON.stringify(payload) : undefined
+        }).then(function (res) { return res.json(); });
+    }
+
+    function testBackendConnection() {
+        return apiRequest('GET', '/api/health', null).then(function (data) {
+            backendStatus = data && data.ok ? 'Connected' : 'Health check failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            return data;
+        }).catch(function (err) {
+            backendStatus = 'Connection failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            throw err;
+        });
+    }
+
+    function syncClaimsFromBackend() {
+        return apiRequest('POST', '/api/claims/pull', { secret: syncSecret }).then(function (data) {
+            if (data && Array.isArray(data.claims)) {
+                claimsDb = JSON.stringify(data.claims);
+                if (!selectedClaimId && data.claims.length) selectedClaimId = data.claims[0].id || '';
+                syncCurrentFromSelectedClaim();
+                backendStatus = 'Claims pulled';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function (err) {
+            backendStatus = 'Pull failed';
+            lastSyncAt = new Date().toLocaleString();
+            saveSession();
+            renderOverlay();
+            throw err;
+        });
+    }
+
+    function buildServerAuthPayload() {
+        return {
+            mode: authMode || 'local',
+            admin_api_key: adminApiKey || '',
+            api_key: memberApiKey || '',
+            faction_id: factionIdLock || ''
+        };
+    }
+
+    function pushCurrentClaimToBackend() {
+        if (!claimId) return Promise.resolve(null);
+
+        var action = isAdmin()
+            ? 'admin_update'
+            : (isMember() ? 'member_submit' : 'guest');
+
+        var payload = {
+            secret: syncSecret,
+            action: action,
+            auth: buildServerAuthPayload(),
+            claim: {
+                id: claimId || '',
+                plan: selectedPlan || 'None',
+                status: claimStatus || 'Not submitted',
+                note: claimNote || '',
+                loss: claimLoss || '',
+                proof: claimProof || '',
+                stack: claimStack || '',
+                payout: payoutAmount || '',
+                decision: decisionNote || '',
+                member: sessionName || 'Guest',
+                updatedAt: new Date().toLocaleString()
+            }
+        };
+
+        return apiRequest('POST', '/api/claims/push', payload).then(function (data) {
+            backendStatus = data && data.ok ? 'Claim pushed' : ((data && data.error) ? data.error : 'Push failed');
+            lastSyncAt = new Date().toLocaleString();
+            if (data && data.claim) {
+                claimStatus = data.claim.status || claimStatus;
+                payoutAmount = data.claim.payout || payoutAmount;
+                decisionNote = data.claim.decision || decisionNote;
+                selectedPlan = data.claim.plan || selectedPlan;
+                claimNote = data.claim.note || claimNote;
+                claimLoss = data.claim.loss || claimLoss;
+      orEach(function (x) {
             var st = String(x && x.status || '');
             if (st === 'Pending review' || st === 'Under review') pending += 1;
             if (st === 'Approved') approved += 1;
