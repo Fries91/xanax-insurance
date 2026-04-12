@@ -53,6 +53,13 @@
     var syncSecret = gv('si_sync_secret', '6282');
     var backendStatus = gv('si_backend_status', 'Not tested');
     var lastSyncAt = gv('si_last_sync_at', 'Never');
+    var finVerifiedXanax = Number(gv('si_fin_verified_xanax', 0) || 0);
+    var finFactionCut = Number(gv('si_fin_faction_cut', 0) || 0);
+    var finPool = Number(gv('si_fin_pool', 0) || 0);
+    var finReceiptCount = Number(gv('si_fin_receipt_count', 0) || 0);
+    var finMemberPayCount = Number(gv('si_fin_member_pay_count', 0) || 0);
+    var finPayoutCount = Number(gv('si_fin_payout_count', 0) || 0);
+    var financeLoading = false;
     var adminApiKey = gv('si_admin_api_key', '');
     var memberApiKey = gv('si_member_api_key', '');
     var singleApiKey = gv('si_single_api_key', gv('si_member_api_key', ''));
@@ -174,6 +181,12 @@
         sv('si_sync_secret', syncSecret || '');
         sv('si_backend_status', backendStatus || 'Not tested');
         sv('si_last_sync_at', lastSyncAt || 'Never');
+        sv('si_fin_verified_xanax', finVerifiedXanax || 0);
+        sv('si_fin_faction_cut', finFactionCut || 0);
+        sv('si_fin_pool', finPool || 0);
+        sv('si_fin_receipt_count', finReceiptCount || 0);
+        sv('si_fin_member_pay_count', finMemberPayCount || 0);
+        sv('si_fin_payout_count', finPayoutCount || 0);
         sv('si_admin_api_key', adminApiKey || '');
         sv('si_member_api_key', memberApiKey || '');
         sv('si_single_api_key', singleApiKey || '');
@@ -775,6 +788,34 @@
     }
 
 
+    function fetchFinancialSummary() {
+        if (!syncSecret || financeLoading) return Promise.resolve(null);
+        financeLoading = true;
+        return apiRequest('POST', '/api/overview/financial-summary', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            financeLoading = false;
+            var summary = data && data.summary;
+            if (summary) {
+                finVerifiedXanax = Number(summary.verified_xanax_in || 0);
+                finFactionCut = Number(summary.faction_cut_xanax || 0);
+                finPool = Number(summary.insurance_pool_xanax || 0);
+                finReceiptCount = Number(summary.verified_receipts_count || 0);
+                finMemberPayCount = Number(summary.member_payment_verified_count || 0);
+                finPayoutCount = Number(summary.admin_payout_verified_count || 0);
+                backendStatus = 'Payments loaded';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            financeLoading = false;
+            return null;
+        });
+    }
+
     function fetchWarTabState() {
         if (!syncSecret || warTabLoading) return Promise.resolve(null);
         warTabLoading = true;
@@ -933,6 +974,8 @@
                 saveSession();
                 renderOverlay();
                 fetchWarTabState();
+                fetchFinancialSummary();
+                syncClaimsFromBackend();
                 return;
             }
 
@@ -950,6 +993,8 @@
                     saveSession();
                     renderOverlay();
                     fetchWarTabState();
+                    fetchFinancialSummary();
+                    syncClaimsFromBackend();
                 } else {
                     window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
                 }
@@ -1097,6 +1142,25 @@
 
     function renderOverview() {
         var summary = getMemberClaimSummary();
+        var financeTiles = '<div class="si-tiles">'
+            + tile(finReceiptCount, 'Claims')
+            + tile(finVerifiedXanax + 'x', 'Payouts')
+            + tile(finFactionCut + 'x', 'Faction Cut')
+            + tile(finPool + 'x', 'Pool')
+            + '</div>';
+
+        var financeCard = card('Insurance Overview',
+            financeTiles
+            + '<div class="si-row"><span class="si-label">Verified Xanax In</span><span>' + esc(finVerifiedXanax + ' Xanax') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Faction Cut</span><span>' + esc(finFactionCut + ' Xanax') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Insurance Pool</span><span>' + esc(finPool + ' Xanax') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Member Payments Verified</span><span>' + esc(finMemberPayCount) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Admin Payouts Verified</span><span>' + esc(finPayoutCount) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Backend</span><span>' + esc(backendStatus) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Last Sync</span><span>' + esc(lastSyncAt) + '</span></div>'
+            + '<div class="si-btnrow"><button id="si-refresh-overview" class="si-btn alt">Refresh Overview</button></div>'
+        );
+
         var coverageCard = card('Active Coverage',
             '<div class="si-row"><span class="si-label">Plan</span><span>' + esc(activeCoveragePlan || 'None') + '</span></div>'
             + '<div class="si-row"><span class="si-label">Stage</span><span>' + esc(activeCoverageStage || '-') + '</span></div>'
@@ -1112,20 +1176,18 @@
             + '</div>'
         );
 
-        return ''
-            + card('Overview',
-                '<div class="si-row"><span class="si-label">User</span><span>' + esc(sessionName) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Role</span><span>' + esc(sessionRole) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Selected Plan</span><span>' + esc(selectedPlan) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Claims</span><span>' + esc(summary.total) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Pending</span><span>' + esc(summary.pending) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Approved</span><span>' + esc(summary.approved) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Denied</span><span>' + esc(summary.denied) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Paid</span><span>' + esc(summary.paid) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Backend</span><span>' + esc(backendStatus) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Last Sync</span><span>' + esc(lastSyncAt) + '</span></div>')
-            + coverageCard
-            + renderWarStackControls();
+        var memberCard = card('Member Summary',
+            '<div class="si-row"><span class="si-label">User</span><span>' + esc(sessionName) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Role</span><span>' + esc(sessionRole) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Selected Plan</span><span>' + esc(selectedPlan) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Claims Total</span><span>' + esc(summary.total) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Pending</span><span>' + esc(summary.pending) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Approved</span><span>' + esc(summary.approved) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Denied</span><span>' + esc(summary.denied) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Paid</span><span>' + esc(summary.paid) + '</span></div>'
+        );
+
+        return '' + financeCard + memberCard + coverageCard + renderWarStackControls();
     }
 
     function renderPlans() {
@@ -1293,6 +1355,13 @@
         var warOffBtn = overlay.querySelector('#si-war-off');
         if (warOffBtn) warOffBtn.addEventListener('click', function () { setWarTabState(false); });
 
+        var refreshOverviewBtn = overlay.querySelector('#si-refresh-overview');
+        if (refreshOverviewBtn) refreshOverviewBtn.addEventListener('click', function () {
+            fetchFinancialSummary();
+            syncClaimsFromBackend();
+            fetchWarTabState();
+        });
+
         var scanNowBtn = overlay.querySelector('#si-scan-now');
         if (scanNowBtn) scanNowBtn.addEventListener('click', runCoverageScan);
 
@@ -1450,7 +1519,11 @@
         ensureMounted();
         ensureCoverageTimer();
         renderOverlay();
-        if (syncSecret) fetchWarTabState();
+        if (syncSecret) {
+            fetchWarTabState();
+            fetchFinancialSummary();
+            syncClaimsFromBackend();
+        }
         if (isCoverageActive()) runCoverageScan();
         if (!remountTimer) {
             remountTimer = setInterval(function () {
