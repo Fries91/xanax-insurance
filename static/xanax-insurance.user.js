@@ -31,7 +31,7 @@
     var warTabUpdatedBy = gv('si_war_tab_updated_by', '');
     var warTabViewerCanManage = false;
 
-    var activeTab = gv('si_active_tab', 'overview');
+    var activeTab = gv('si_active_tab', 'rules');
     var selectedPlan = gv('si_selected_plan', 'None');
     var sessionRole = gv('si_session_role', 'guest');
     var sessionName = gv('si_session_name', 'Guest');
@@ -1469,6 +1469,31 @@
         }).join('');
     }
 
+    function renderRules() {
+        return ''
+            + card('Rules',
+                '<div class="si-text">1. Save your Torn API key in Settings and log in first.</div>'
+                + '<div class="si-text">2. Use only the correct plan for the stack or situation you are covering.</div>'
+                + '<div class="si-text">3. Make sure the required payment is sent for the plan before relying on coverage.</div>'
+                + '<div class="si-text">4. Read the plan Terms button carefully before activating any plan or Wrath stage.</div>'
+                + '<div class="si-text">5. If War Stack is active, only use War Stack plans inside that tab.</div>'
+                + '<div class="si-text">6. False, misleading, or rule-breaking claims can be denied.</div>'
+                + '<div class="si-text">7. Payout is only final after admin review and verification.</div>')
+            + card('How To Use It Properly To Receive Payment If You OD',
+                '<div class="si-text">Step 1: Open Settings, save your Torn API key, and log in.</div>'
+                + '<div class="si-text">Step 2: Go to Plans and choose the correct plan for what you are doing.</div>'
+                + '<div class="si-text">Step 3: Read the Terms button for that plan and make sure you match its rules.</div>'
+                + '<div class="si-text">Step 4: Activate the plan or the correct Wrath stage before you start.</div>'
+                + '<div class="si-text">Step 5: Stay within the active coverage window shown by the script.</div>'
+                + '<div class="si-text">Step 6: If an OD happens during the active window, the system can create a pending claim for review.</div>'
+                + '<div class="si-text">Step 7: Admin reviews the claim, payment proof, and plan rules before payout is approved.</div>')
+            + card('How It Works',
+                '<div class="si-text">Sinner\'s Insurance lets members log in with one Torn API key, activate a plan, and run a timed coverage window.</div>'
+                + '<div class="si-text">During an active window, the script checks for OD-style events and can submit a pending claim automatically.</div>'
+                + '<div class="si-text">Claims, payment checks, admin review, War Stack controls, and faction request tools are all managed through the overlay and backend.</div>'
+                + '<div class="si-text">Different plans have different payment, coverage, payout, and terms rules, so always follow the exact plan requirements.</div>');
+    }
+
     function renderOverview() {
         var financeTiles = '<div class="si-tiles">'
             + tile(finReceiptCount, 'Claims')
@@ -1845,6 +1870,7 @@
             + '<button id="si-close-btn" class="si-close" type="button">×</button>'
             + '</div>'
             + '<div class="si-tabs">'
+            + '<button class="si-tab ' + (activeTab === 'rules' ? 'active' : '') + '" data-tab="rules">RULES</button>'
             + '<button class="si-tab ' + (activeTab === 'overview' ? 'active' : '') + '" data-tab="overview">Overview</button>'
             + '<button class="si-tab ' + (activeTab === 'plans' ? 'active' : '') + '" data-tab="plans">Plans</button>'
             + (canSeeClaimsUi() ? '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims' + (alertUnreadClaims ? ' (' + alertUnreadClaims + ')' : '') + '</button>' : '')
