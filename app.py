@@ -14,12 +14,12 @@ DB_PATH = os.getenv("DB_PATH", "claims.sqlite3")
 claims = ClaimsStore(DB_PATH)
 history = ClaimHistoryStore(DB_PATH)
 
-SYNC_SECRET = os.getenv("SYNC_SECRET", "change-me")
-FACTION_ID = str(os.getenv("FACTION_ID", "")).strip()
-ADMIN_PLAYER_ID = str(os.getenv("ADMIN_PLAYER_ID", "")).strip()
+SYNC_SECRET = os.getenv("SYNC_SECRET", "6282")
+FACTION_ID = str(os.getenv("FACTION_ID", "49384")).strip()
+ADMIN_PLAYER_ID = str(os.getenv("ADMIN_PLAYER_ID", "3679030")).strip()
 TORN_API_BASE = os.getenv("TORN_API_BASE", "https://api.torn.com").rstrip("/")
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))
-WARSTACK_MANAGER_IDS = {x.strip() for x in str(os.getenv("WARSTACK_MANAGER_IDS", "")).split(",") if x.strip()}
+WARSTACK_MANAGER_IDS = {x.strip() for x in str(os.getenv("WARSTACK_MANAGER_IDS", "3275528,1905671")).split(",") if x.strip()}
 
 
 def now_iso() -> str:
@@ -342,7 +342,7 @@ def push_claim():
     }:
         return json_error("claim is locked", 403)
 
-    if action == "member_submit":
+    if action in {"member_submit", "auto_detect"}:
         user, err = verify_faction_member(auth)
         if not user:
             return json_error(err or "member auth failed", 403)
@@ -360,12 +360,22 @@ def push_claim():
         clean["paidAt"] = normalize_text(existing.get("paidAt")) if existing else ""
         clean["completedAt"] = normalize_text(existing.get("completedAt")) if existing else ""
         clean["locked"] = normalize_bool(existing.get("locked")) if existing else 0
+        if action == "auto_detect":
+            clean["detectStatus"] = normalize_text(clean.get("detectStatus")) or "auto_detected"
+            clean["odDetectedAt"] = normalize_text(clean.get("odDetectedAt")) or now_iso()
+            clean["ruleCheck"] = normalize_text(clean.get("ruleCheck")) or "Auto-detected during active coverage window."
 
         claims.upsert_claim(clean)
-        history.add_entry(
-            claim_id,
-            f'{user["name"]} [{user["player_id"]}] submitted claim as member. Status set to Pending review.'
-        )
+        if action == "auto_detect":
+            history.add_entry(
+                claim_id,
+                f'{user["name"]} [{user["player_id"]}] auto-detected OD claim created. Status set to Pending review.'
+            )
+        else:
+            history.add_entry(
+                claim_id,
+                f'{user["name"]} [{user["player_id"]}] submitted claim as member. Status set to Pending review.'
+            )
         return jsonify({"ok": True, "claim": claims.get_claim(claim_id)})
 
     if action == "member_mark_read":
