@@ -874,6 +874,16 @@
         return arr;
     }
 
+    function getRecentMemberClaims(limit) {
+        limit = Number(limit || 5) || 5;
+        var name = String(sessionName || '').toLowerCase();
+        return getClaimsDbItems()
+            .filter(function (item) {
+                return item && String(item.member || '').toLowerCase() === name;
+            })
+            .slice(0, limit);
+    }
+
     function getFilteredClaimsDbItems() {
         var filtered = getClaimsDbItems().filter(function (item) {
             if (!item) return false;
@@ -1597,6 +1607,21 @@
     }
 
     function renderClaims() {
+        if (!isAdmin()) {
+            var recent = getRecentMemberClaims(6);
+            return card('Your Recent Claims',
+                recent.length ? recent.map(function (item) {
+                    return '<div class="si-history-item">'
+                        + '<div class="si-history-at">' + esc(item.updatedAt || '') + '</div>'
+                        + '<div class="si-text"><strong>' + esc(item.id || '') + '</strong> | '
+                        + esc(item.plan || 'None') + ' | ' + esc(item.status || 'Unknown')
+                        + (item.loss ? ' | Loss: ' + esc(item.loss) : '')
+                        + '</div>'
+                        + (item.note ? '<div class="si-text">' + esc(item.note) + '</div>' : '')
+                        + '</div>';
+                }).join('') : '<div class="si-text">No recent claims yet.</div>');
+        }
+
         syncFromSelectedClaim();
         var items = getFilteredClaimsDbItems();
         var history = getClaimHistoryItems();
@@ -1635,7 +1660,7 @@
                 + '<div class="si-row"><span class="si-label">Auto Window</span><span>' + esc(activeCoveragePlan ? (activeCoveragePlan + (activeCoverageStage ? ' ' + activeCoverageStage : '')) : 'None') + '</span></div>'
                 + '<div class="si-row"><span class="si-label">Detect</span><span>' + esc(activeCoverageDetectStatus || 'idle') + '</span></div>'
                 + '<div class="si-btnrow"><button id="si-submit-claim" class="si-btn">Submit Claim</button></div>')
-            + (isAdmin() ? card('Admin Review',
+            + card('Admin Review',
                 '<div class="si-field"><label>Payout</label><input id="si-payout" class="si-input" value="' + esc(payoutAmount) + '" placeholder="Payout amount"></div>'
                 + '<div class="si-field"><label>Decision Note</label><textarea id="si-decision" class="si-textarea" placeholder="Admin note">' + esc(decisionNote) + '</textarea></div>'
                 + '<div class="si-btnstack">'
@@ -1643,30 +1668,11 @@
                 + '<button id="si-approve" class="si-btn good">Approve</button>'
                 + '<button id="si-deny" class="si-btn bad">Deny</button>'
                 + '<button id="si-paid" class="si-btn">Mark Paid</button>'
-                + '</div>') : '')
+                + '</div>')
             + card('Claim History',
                 history.length ? history.map(function (item) {
                     return '<div class="si-history-item"><div class="si-history-at">' + esc(item.at) + '</div><div class="si-text">' + esc(item.text) + '</div></div>';
                 }).join('') : '<div class="si-text">No history yet.</div>');
-    }
-
-    function renderWarStackTab() {
-        var greed = getGreedPlanData();
-        return ''
-            + card('War Stack',
-                '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(warTabEnabled ? 'Activated' : 'Inactive') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warTabUpdatedBy || 'Not set') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(formatDateTime(warTabUpdatedAt)) + '</span></div>'
-                + '<div class="si-text">This tab is only visible while War Stack is activated.</div>')
-            + card('Greed Plan',
-                '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(greed.coverage) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(greed.payment) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(greed.window) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(greed.payout) + '</span></div>'
-                + '<div class="si-btnrow">'
-                + '<button class="si-btn" id="si-greed-select">Select Greed</button>'
-                + '<button class="si-btn alt" id="si-greed-terms">Terms</button>'
-                + '</div>');
     }
 
     function renderSettings() {
