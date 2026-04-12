@@ -449,6 +449,64 @@ class ClaimsStore(BaseStore):
         )
 
 
+    def get_xanax_request_state(self) -> dict[str, Any]:
+        total_row = self.get_setting("xanax_request_total_owed", "0")
+        req_row = self.get_setting("xanax_request_requested", "0")
+        req_at_row = self.get_setting("xanax_request_requested_at", "")
+        req_by_row = self.get_setting("xanax_request_requested_by", "")
+        req_by_id_row = self.get_setting("xanax_request_requested_by_id", "")
+        sent_at_row = self.get_setting("xanax_request_sent_at", "")
+        sent_by_row = self.get_setting("xanax_request_sent_by", "")
+        sent_by_id_row = self.get_setting("xanax_request_sent_by_id", "")
+        reset_at_row = self.get_setting("xanax_request_reset_at", "")
+        reset_by_row = self.get_setting("xanax_request_reset_by", "")
+        reset_by_id_row = self.get_setting("xanax_request_reset_by_id", "")
+        status_row = self.get_setting("xanax_request_status", "idle")
+
+        def _num(text: str) -> float:
+            try:
+                return float(str(text or "0").strip())
+            except Exception:
+                return 0.0
+
+        return {
+            "totalOwed": _num(total_row.get("value", "0")),
+            "requested": str(req_row.get("value", "0")).strip().lower() in {"1", "true", "yes", "on"},
+            "requestedAt": str(req_at_row.get("value", "")),
+            "requestedBy": str(req_by_row.get("value", "")),
+            "requestedById": str(req_by_id_row.get("value", "")),
+            "sentAt": str(sent_at_row.get("value", "")),
+            "sentBy": str(sent_by_row.get("value", "")),
+            "sentById": str(sent_by_id_row.get("value", "")),
+            "resetAt": str(reset_at_row.get("value", "")),
+            "resetBy": str(reset_by_row.get("value", "")),
+            "resetById": str(reset_by_id_row.get("value", "")),
+            "status": str(status_row.get("value", "idle")) or "idle",
+        }
+
+    def request_xanax_cut(self, total_owed: float | int, requested_by: str = "", requested_by_id: str = "") -> None:
+        self.set_setting("xanax_request_total_owed", str(float(total_owed or 0)), updated_by=requested_by, updated_by_id=requested_by_id)
+        self.set_setting("xanax_request_requested", "1", updated_by=requested_by, updated_by_id=requested_by_id)
+        self.set_setting("xanax_request_requested_at", now_iso(), updated_by=requested_by, updated_by_id=requested_by_id)
+        self.set_setting("xanax_request_requested_by", str(requested_by or ""), updated_by=requested_by, updated_by_id=requested_by_id)
+        self.set_setting("xanax_request_requested_by_id", str(requested_by_id or ""), updated_by=requested_by, updated_by_id=requested_by_id)
+        self.set_setting("xanax_request_status", "requested", updated_by=requested_by, updated_by_id=requested_by_id)
+
+    def mark_xanax_cut_sent(self, sent_by: str = "", sent_by_id: str = "") -> None:
+        self.set_setting("xanax_request_status", "sent", updated_by=sent_by, updated_by_id=sent_by_id)
+        self.set_setting("xanax_request_sent_at", now_iso(), updated_by=sent_by, updated_by_id=sent_by_id)
+        self.set_setting("xanax_request_sent_by", str(sent_by or ""), updated_by=sent_by, updated_by_id=sent_by_id)
+        self.set_setting("xanax_request_sent_by_id", str(sent_by_id or ""), updated_by=sent_by, updated_by_id=sent_by_id)
+
+    def reset_xanax_cut(self, reset_by: str = "", reset_by_id: str = "") -> None:
+        self.set_setting("xanax_request_total_owed", "0", updated_by=reset_by, updated_by_id=reset_by_id)
+        self.set_setting("xanax_request_requested", "0", updated_by=reset_by, updated_by_id=reset_by_id)
+        self.set_setting("xanax_request_status", "idle", updated_by=reset_by, updated_by_id=reset_by_id)
+        self.set_setting("xanax_request_reset_at", now_iso(), updated_by=reset_by, updated_by_id=reset_by_id)
+        self.set_setting("xanax_request_reset_by", str(reset_by or ""), updated_by=reset_by, updated_by_id=reset_by_id)
+        self.set_setting("xanax_request_reset_by_id", str(reset_by_id or ""), updated_by=reset_by, updated_by_id=reset_by_id)
+
+
 class ClaimHistoryStore(BaseStore):
     def __init__(self, db_path: str) -> None:
         super().__init__(db_path)
