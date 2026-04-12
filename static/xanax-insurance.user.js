@@ -25,11 +25,11 @@
     var backdrop = null;
     var remountTimer = null;
     var historyLoading = false;
-    var warLoading = false;
-    var warEnabled = !!gv('si_war_enabled', 0);
-    var warUpdatedAt = gv('si_war_updated_at', '');
-    var warUpdatedBy = gv('si_war_updated_by', '');
-    var warViewerCanManage = false;
+    var warTabLoading = false;
+    var warTabEnabled = !!gv('si_war_tab_enabled', 0);
+    var warTabUpdatedAt = gv('si_war_tab_updated_at', '');
+    var warTabUpdatedBy = gv('si_war_tab_updated_by', '');
+    var warTabViewerCanManage = false;
 
     var activeTab = gv('si_active_tab', 'overview');
     var selectedPlan = gv('si_selected_plan', 'None');
@@ -192,9 +192,9 @@
         sv('si_active_coverage_armed_energy', activeCoverageArmedEnergy || '');
         sv('si_active_coverage_armed_booster_cd', activeCoverageArmedBoosterCd || '');
         sv('si_active_coverage_rule_check', activeCoverageRuleCheck || '');
-        sv('si_war_enabled', warEnabled ? 1 : 0);
-        sv('si_war_updated_at', warUpdatedAt || '');
-        sv('si_war_updated_by', warUpdatedBy || '');
+        sv('si_war_tab_enabled', warTabEnabled ? 1 : 0);
+        sv('si_war_tab_updated_at', warTabUpdatedAt || '');
+        sv('si_war_tab_updated_by', warTabUpdatedBy || '');
     }
 
     function isAdmin() {
@@ -775,33 +775,33 @@
     }
 
 
-    function fetchWarState() {
-        if (!syncSecret || warLoading) return Promise.resolve(null);
-        warLoading = true;
+    function fetchWarTabState() {
+        if (!syncSecret || warTabLoading) return Promise.resolve(null);
+        warTabLoading = true;
         return apiRequest('POST', '/api/warstack/state', {
             secret: syncSecret,
             auth: buildServerAuthPayload()
         }).then(function (data) {
-            warLoading = false;
+            warTabLoading = false;
             var state = data && (data.state || data.warstack);
             if (state) {
-                warEnabled = !!state.enabled;
-                warUpdatedAt = state.updatedAt || '';
-                warUpdatedBy = state.updatedBy || '';
-                warViewerCanManage = !!state.viewerCanManage;
-                backendStatus = 'War stack loaded';
+                warTabEnabled = !!state.enabled;
+                warTabUpdatedAt = state.updatedAt || '';
+                warTabUpdatedBy = state.updatedBy || '';
+                warTabViewerCanManage = !!state.viewerCanManage;
+                backendStatus = 'War Stack loaded';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
             }
             return data;
         }).catch(function () {
-            warLoading = false;
+            warTabLoading = false;
             return null;
         });
     }
 
-    function setWarState(enabled) {
+    function setWarTabState(enabled) {
         if (!syncSecret) {
             window.alert('Enter Sync Secret first.');
             return;
@@ -813,19 +813,19 @@
         }).then(function (data) {
             var state = data && (data.state || data.warstack);
             if (state) {
-                warEnabled = !!state.enabled;
-                warUpdatedAt = state.updatedAt || '';
-                warUpdatedBy = state.updatedBy || '';
-                warViewerCanManage = !!state.viewerCanManage;
-                backendStatus = 'War stack updated';
+                warTabEnabled = !!state.enabled;
+                warTabUpdatedAt = state.updatedAt || '';
+                warTabUpdatedBy = state.updatedBy || '';
+                warTabViewerCanManage = !!state.viewerCanManage;
+                backendStatus = 'War Stack updated';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
             } else {
-                window.alert((data && data.error) ? data.error : 'War stack update failed.');
+                window.alert((data && data.error) ? data.error : 'War tab update failed.');
             }
         }).catch(function () {
-            window.alert('War stack update failed.');
+            window.alert('War tab update failed.');
         });
     }
 
@@ -932,7 +932,7 @@
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
-                fetchWarState();
+                fetchWarTabState();
                 return;
             }
 
@@ -949,7 +949,7 @@
                     lastSyncAt = new Date().toLocaleString();
                     saveSession();
                     renderOverlay();
-                    fetchWarState();
+                    fetchWarTabState();
                 } else {
                     window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
                 }
@@ -1073,7 +1073,7 @@
 
     function renderWarStackControls() {
         var canManage = isAdmin() || sessionRole === 'leader' || sessionRole === 'co-leader';
-        var stateText = warEnabled ? 'Activated' : 'Inactive';
+        var stateText = warTabEnabled ? 'Activated' : 'Inactive';
         var buttons = canManage
             ? '<div class="si-btnrow">'
                 + '<button id="si-war-on" class="si-btn good">Activate War Stack</button>'
@@ -1083,8 +1083,8 @@
 
         return card('War Stack',
             '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(stateText) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warUpdatedBy || 'Not set') + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(warUpdatedAt || 'Never') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warTabUpdatedBy || 'Not set') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(warTabUpdatedAt || 'Never') + '</span></div>'
             + buttons
         );
     }
@@ -1290,10 +1290,10 @@
         if (singleLoginBtn) singleLoginBtn.addEventListener('click', singleBackendLogin);
 
         var warOnBtn = overlay.querySelector('#si-war-on');
-        if (warOnBtn) warOnBtn.addEventListener('click', function () { setWarState(true); });
+        if (warOnBtn) warOnBtn.addEventListener('click', function () { setWarTabState(true); });
 
         var warOffBtn = overlay.querySelector('#si-war-off');
-        if (warOffBtn) warOffBtn.addEventListener('click', function () { setWarState(false); });
+        if (warOffBtn) warOffBtn.addEventListener('click', function () { setWarTabState(false); });
 
         var scanNowBtn = overlay.querySelector('#si-scan-now');
         if (scanNowBtn) scanNowBtn.addEventListener('click', runCoverageScan);
@@ -1452,7 +1452,7 @@
         ensureMounted();
         ensureCoverageTimer();
         renderOverlay();
-        if (syncSecret) fetchWarState();
+        if (syncSecret) fetchWarTabState();
         if (isCoverageActive()) runCoverageScan();
         if (!remountTimer) {
             remountTimer = setInterval(function () {
