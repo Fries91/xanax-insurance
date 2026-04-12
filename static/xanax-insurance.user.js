@@ -65,6 +65,7 @@
     var singleApiKey = gv('si_single_api_key', gv('si_member_api_key', ''));
     var factionIdLock = gv('si_faction_id_lock', '49384');
     var authMode = gv('si_auth_mode', 'local');
+    var settingsNotice = gv('si_settings_notice', 'Waiting for API key save or login.');
 
     var scanTimer = null;
     var activeCoverageEnabled = !!gv('si_active_coverage_enabled', 0);
@@ -193,6 +194,7 @@
         sv('si_single_api_key', singleApiKey || '');
         sv('si_faction_id_lock', factionIdLock || '');
         sv('si_auth_mode', authMode || 'local');
+        sv('si_settings_notice', settingsNotice || '');
         sv('si_active_coverage_enabled', activeCoverageEnabled ? 1 : 0);
         sv('si_active_coverage_plan', activeCoveragePlan || '');
         sv('si_active_coverage_stage', activeCoverageStage || '');
@@ -1009,6 +1011,7 @@
                 sessionRole = 'admin';
                 authMode = 'backend-admin-key';
                 backendStatus = 'Admin login ok';
+                settingsNotice = 'Login successful. Signed in as admin.';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
@@ -1028,6 +1031,7 @@
                     sessionRole = memberData.user.role || 'member';
                     authMode = 'backend-faction';
                     backendStatus = 'Member login ok';
+                    settingsNotice = 'Login successful. Signed in as ' + (memberData.user.name || 'Member') + '.';
                     lastSyncAt = new Date().toLocaleString();
                     saveSession();
                     renderOverlay();
@@ -1069,6 +1073,7 @@
         sessionRole = 'guest';
         sessionName = 'Guest';
         authMode = 'local';
+        settingsNotice = 'Logged out.';
         saveSession();
         renderOverlay();
     }
@@ -1294,6 +1299,10 @@
                 + '<button id="si-logout" class="si-btn alt">Logout</button>'
                 + '</div>'
                 + '<div class="si-text">Use one Torn API key to log in. The script checks the key owner and signs you in as admin or member automatically.</div>')
+            + card('API Key Status',
+                '<div class="si-row"><span class="si-label">Saved Key</span><span>' + esc(singleApiKey ? 'Stored' : 'Not saved') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Login Status</span><span>' + esc(sessionRole === 'guest' ? 'Not logged in' : ('Logged in as ' + sessionName + ' (' + sessionRole + ')')) + '</span></div>'
+                + '<div class="si-text">' + esc(settingsNotice || 'Waiting for API key save or login.') + '</div>')
             + card('ToS',
                 '<div class="si-text">By using Sinner\'s Insurance, you agree that claims may be reviewed manually, payouts are not guaranteed until approved by faction staff, and misuse, false claims, or abuse of the system can result in denial or removal from coverage.</div>')
             + card('API Key Storage and Usage',
@@ -1333,9 +1342,10 @@
 
         var saveBtn = overlay.querySelector('#si-save-settings');
         if (saveBtn) saveBtn.addEventListener('click', function () {
-            singleApiKey = valueOf('#si-single-api-key') || singleApiKey;
+            singleApiKey = valueOf('#si-single-api-key') || '';
             adminApiKey = singleApiKey;
             memberApiKey = singleApiKey;
+            settingsNotice = singleApiKey ? 'API key saved successfully.' : 'No API key saved yet.';
             saveSession();
             renderOverlay();
         });
