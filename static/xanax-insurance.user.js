@@ -245,10 +245,13 @@
         if (name === 'Envy') {
             return [
                 'Envy Terms:',
+                'Use for approved Envy claims only.',
+                'Must start with 1000 energy.',
+                'Must start with 0 booster cool down.',
+                'Can use Wrath for stack.',
                 'Coverage: 25 Xanax + 3 E-DVD.',
                 'Payment: 5 Xanax.',
-                'Window: 30 mins.',
-                p.rule
+                'Window: 30 mins.'
             ].join('\n');
         }
         if (name === 'Pride') {
