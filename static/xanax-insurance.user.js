@@ -251,6 +251,29 @@
         return sessionRole === 'member' || sessionRole === 'admin';
     }
 
+    function canManageWarStackUi() {
+        return sessionRole === 'admin' || sessionRole === 'leader' || sessionRole === 'co-leader';
+    }
+
+    function canSeeClaimsUi() {
+        return sessionRole === 'admin';
+    }
+
+    function canSeeActivationsUi() {
+        return sessionRole === 'admin';
+    }
+
+    function canSeeXanaxRequestUi() {
+        return sessionRole === 'admin' || sessionRole === 'leader';
+    }
+
+    function maskApiKeyForDisplay(value) {
+        var v = String(value || '');
+        if (!v) return '';
+        if (v.length <= 4) return '****';
+        return Array(Math.max(4, v.length - 4) + 1).join('*') + v.slice(-4);
+    }
+
     function getPlanByName(name) {
         return PLANS.find(function (p) { return p.name === name; }) || null;
     }
@@ -1449,27 +1472,38 @@
     function renderOverview() {
         var financeTiles = '<div class="si-tiles">'
             + tile(finReceiptCount, 'Claims')
-            + tile(finVerifiedXanax + 'x', 'Payouts')
             + tile(finFactionCut + 'x', 'Faction Cut')
-            + tile(finPool + 'x', 'Pool')
+            + tile(finPayoutCount, 'Payouts Verified')
             + '</div>';
 
         var financeCard = card('Insurance Overview',
             financeTiles
-            + '<div class="si-row"><span class="si-label">Verified Xanax In</span><span>' + esc(finVerifiedXanax + ' Xanax') + '</span></div>'
             + '<div class="si-row"><span class="si-label">Faction Cut</span><span>' + esc(finFactionCut + ' Xanax') + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Insurance Pool</span><span>' + esc(finPool + ' Xanax') + '</span></div>'
             + '<div class="si-row"><span class="si-label">Member Payments Verified</span><span>' + esc(finMemberPayCount) + '</span></div>'
             + '<div class="si-row"><span class="si-label">Admin Payouts Verified</span><span>' + esc(finPayoutCount) + '</span></div>'
         );
 
-        var alertsCard = card('Admin Alerts',
-            '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
-            + '<div class="si-text">Admin alerts update from the backend after login and refresh when tabs open.</div>'
-        );
+        var adminAlerts = isAdmin()
+            ? card('Admin Alerts',
+                '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>')
+            : '';
 
-        return financeCard + (isAdmin() ? alertsCard : '') + renderWarStackControls();
+        var coverageInfo = '';
+        if (activeCoveragePlan) {
+            coverageInfo = card('Active Coverage',
+                '<div class="si-row"><span class="si-label">Plan</span><span>' + esc(activeCoveragePlan || 'None') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Stage</span><span>' + esc(activeCoverageStage || '-') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(getPlanPayoutText(activeCoveragePlan, activeCoverageStage) || '-') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(isCoverageActive() ? 'Active' : (activeCoverageDetectStatus || 'Idle')) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Expires</span><span>' + esc(formatDateTime(activeCoverageExpiresAt)) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Remaining</span><span>' + esc(isCoverageActive() ? formatRemaining(currentCoverageRemainingMs()) : 'Not active') + '</span></div>'
+            );
+        }
+
+        var warStackCard = canManageWarStackUi() ? renderWarStackControls() : '';
+
+        return financeCard + adminAlerts + coverageInfo + warStackCard;
     }
 
     function renderPlans() {
@@ -1611,23 +1645,24 @@
     }
 
     function renderSettings() {
+        var maskedKey = maskApiKeyForDisplay(singleApiKey);
         return ''
             + card('Torn Login',
-                '<div class="si-field"><label>Torn API Key</label><input id="si-single-api-key" class="si-input" value="' + esc(singleApiKey) + '" placeholder="Enter your Torn API key"></div>'
+                '<div class="si-field"><label>Torn API Key</label><input id="si-single-api-key" type="password" class="si-input" value="' + esc(singleApiKey) + '" placeholder="Enter your Torn API key"></div>'
+                + '<div class="si-row"><span class="si-label">Saved Key</span><span>' + esc(singleApiKey ? maskedKey : 'Not saved') + '</span></div>'
                 + '<div class="si-btnrow">'
                 + '<button id="si-save-settings" class="si-btn">Save API Key</button>'
                 + '<button id="si-single-login" class="si-btn good">Login</button>'
                 + '<button id="si-logout" class="si-btn alt">Logout</button>'
                 + '</div>'
-                + '<div class="si-text">Use one Torn API key to log in. The script checks the key owner and signs you in as admin or member automatically.</div>')
+                + '<div class="si-text">Use one Torn API key to log in. After saving, the key is masked in the status display.</div>')
             + card('API Key Status',
-                '<div class="si-row"><span class="si-label">Saved Key</span><span>' + esc(singleApiKey ? 'Stored' : 'Not saved') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Login Status</span><span>' + esc(sessionRole === 'guest' ? 'Not logged in' : ('Logged in as ' + sessionName + ' (' + sessionRole + ')')) + '</span></div>'
+                '<div class="si-row"><span class="si-label">Login Status</span><span>' + esc(sessionRole === 'guest' ? 'Not logged in' : ('Logged in as ' + sessionName + ' (' + sessionRole + ')')) + '</span></div>'
                 + '<div class="si-text">' + esc(settingsNotice || 'Waiting for API key save or login.') + '</div>')
             + card('ToS',
-                '<div class="si-text">By using Sinner\'s Insurance, you agree that claims may be reviewed manually, payouts are not guaranteed until approved by faction staff, and misuse, false claims, or abuse of the system can result in denial or removal from coverage.</div>')
+                '<div class="si-text">By using Sinner\'s Insurance, you agree that coverage, activations, and claims are subject to faction rules and review. Payouts are only valid after approval and verification. False claims, false proofs, or abuse of the system may lead to denial and removal of access.</div>')
             + card('API Key Storage and Usage',
-                '<div class="si-text">Your Torn API key is stored locally in your userscript storage on your device so the script can log you in, check your own coverage window, scan for OD-related claim events during an active insured window, and sync your claim data with the Sinner\'s Insurance backend. It is not meant for sharing, resale, or use outside Torn-related insurance functions. Keep your key private, use only the access level needed, and rotate it if you no longer trust the device or script install.</div>');
+                '<div class="si-text">Your Torn API key is stored locally in userscript storage on your device. It is used only for Torn login, plan activation, OD scan checks during active windows, and syncing insurance data with the Sinner\'s Insurance backend. Keep your key private and rotate it if your device or install is no longer trusted.</div>');
     }
 
     function bindEvents() {
@@ -1789,6 +1824,10 @@
     }
 
     function renderOverlay() {
+        if (activeTab === 'claims' && !canSeeClaimsUi()) activeTab = 'overview';
+        if (activeTab === 'activations' && !canSeeActivationsUi()) activeTab = 'overview';
+        if (activeTab === 'xanax_request' && !canSeeXanaxRequestUi()) activeTab = 'overview';
+        if (activeTab === 'war_stack' && !(warTabEnabled && canManageWarStackUi())) activeTab = 'overview';
         ensureMounted();
         if (!overlay) return;
 
@@ -1808,10 +1847,10 @@
             + '<div class="si-tabs">'
             + '<button class="si-tab ' + (activeTab === 'overview' ? 'active' : '') + '" data-tab="overview">Overview</button>'
             + '<button class="si-tab ' + (activeTab === 'plans' ? 'active' : '') + '" data-tab="plans">Plans</button>'
-            + '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims' + (alertUnreadClaims ? ' (' + alertUnreadClaims + ')' : '') + '</button>'
-            + '<button class="si-tab ' + (activeTab === 'activations' ? 'active' : '') + '" data-tab="activations">Activations' + (alertPendingActivations ? ' (' + alertPendingActivations + ')' : '') + '</button>'
-            + (warTabEnabled ? '<button class=\"si-tab ' + (activeTab === 'war_stack' ? 'active' : '') + '\" data-tab=\"war_stack\">War Stack</button>' : '')
-            + '<button class="si-tab ' + (activeTab === 'xanax_request' ? 'active' : '') + '" data-tab="xanax_request">Xanax Request</button>'
+            + (canSeeClaimsUi() ? '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims' + (alertUnreadClaims ? ' (' + alertUnreadClaims + ')' : '') + '</button>' : '')
+            + (canSeeActivationsUi() ? '<button class="si-tab ' + (activeTab === 'activations' ? 'active' : '') + '" data-tab="activations">Activations' + (alertPendingActivations ? ' (' + alertPendingActivations + ')' : '') + '</button>' : '')
+            + (warTabEnabled && canManageWarStackUi() ? '<button class=\"si-tab ' + (activeTab === 'war_stack' ? 'active' : '') + '\" data-tab=\"war_stack\">War Stack</button>' : '')
+            + (canSeeXanaxRequestUi() ? '<button class="si-tab ' + (activeTab === 'xanax_request' ? 'active' : '') + '" data-tab="xanax_request">Xanax Request</button>' : '')
             + '<button class="si-tab ' + (activeTab === 'settings' ? 'active' : '') + '" data-tab="settings">Settings</button>'
             + '</div>'
             + '<div class="si-body">' + body + '</div>';
@@ -1822,8 +1861,8 @@
     function addStyles() {
         if (document.getElementById('si-pda-style-flag')) return;
         GM_addStyle(`
-#si-pda-launcher{position:fixed!important;left:10px!important;bottom:10px!important;z-index:2147483647!important;width:132px!important;height:34px!important;display:flex!important;align-items:center!important;justify-content:center!important;}
-#si-pda-launcher button{width:132px!important;height:34px!important;border-radius:10px!important;border:1px solid rgba(205,164,74,.5)!important;background:linear-gradient(180deg,rgba(90,12,18,.95),rgba(35,8,10,.98))!important;color:#f5df9d!important;font-size:11px!important;font-weight:800!important;letter-spacing:.2px!important;box-shadow:0 8px 20px rgba(0,0,0,.35)!important;}
+#si-pda-launcher{position:fixed!important;left:10px!important;bottom:10px!important;z-index:2147483647!important;width:118px!important;height:28px!important;display:flex!important;align-items:center!important;justify-content:center!important;}
+#si-pda-launcher button{width:118px!important;height:28px!important;border-radius:9px!important;border:1px solid rgba(205,164,74,.5)!important;background:linear-gradient(180deg,rgba(90,12,18,.95),rgba(35,8,10,.98))!important;color:#f5df9d!important;font-size:10px!important;font-weight:800!important;letter-spacing:.1px!important;box-shadow:0 8px 20px rgba(0,0,0,.35)!important;}
 #si-pda-backdrop{position:fixed!important;inset:0!important;background:rgba(0,0,0,.62)!important;z-index:2147483645!important;display:none!important;}
 #si-pda-backdrop.open{display:block!important;}
 #si-pda-overlay{position:fixed!important;left:10px!important;right:10px!important;top:78px!important;bottom:84px!important;z-index:2147483646!important;display:none!important;flex-direction:column!important;overflow:hidden!important;border-radius:14px!important;border:1px solid rgba(201,162,80,.22)!important;background:linear-gradient(180deg,rgba(28,10,14,.99),rgba(8,5,8,.99))!important;color:#f7ead0!important;box-shadow:0 20px 55px rgba(0,0,0,.55)!important;}
@@ -1895,7 +1934,7 @@
         if (!launcher || !document.body.contains(launcher)) {
             launcher = document.createElement('div');
             launcher.id = 'si-pda-launcher';
-            launcher.innerHTML = '<button type="button">💊 Sinners</button>';
+            launcher.innerHTML = '<button type="button">💊 Sinner\'s Insurance</button>';
             document.body.appendChild(launcher);
             var btn = launcher.querySelector('button');
             if (btn) btn.addEventListener('click', openOverlay);
