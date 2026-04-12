@@ -1141,7 +1141,6 @@
     }
 
     function renderOverview() {
-        var summary = getMemberClaimSummary();
         var financeTiles = '<div class="si-tiles">'
             + tile(finReceiptCount, 'Claims')
             + tile(finVerifiedXanax + 'x', 'Payouts')
@@ -1156,38 +1155,9 @@
             + '<div class="si-row"><span class="si-label">Insurance Pool</span><span>' + esc(finPool + ' Xanax') + '</span></div>'
             + '<div class="si-row"><span class="si-label">Member Payments Verified</span><span>' + esc(finMemberPayCount) + '</span></div>'
             + '<div class="si-row"><span class="si-label">Admin Payouts Verified</span><span>' + esc(finPayoutCount) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Backend</span><span>' + esc(backendStatus) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Last Sync</span><span>' + esc(lastSyncAt) + '</span></div>'
-            + '<div class="si-btnrow"><button id="si-refresh-overview" class="si-btn alt">Refresh Overview</button></div>'
         );
 
-        var coverageCard = card('Active Coverage',
-            '<div class="si-row"><span class="si-label">Plan</span><span>' + esc(activeCoveragePlan || 'None') + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Stage</span><span>' + esc(activeCoverageStage || '-') + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Status</span><span class="si-status">' + esc(isCoverageActive() ? 'Active' : (activeCoverageDetectStatus || 'Idle')) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Armed At</span><span>' + esc(formatDateTime(activeCoverageArmedAt)) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Expires</span><span>' + esc(formatDateTime(activeCoverageExpiresAt)) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Remaining</span><span>' + esc(isCoverageActive() ? formatRemaining(currentCoverageRemainingMs()) : 'Not active') + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Last Check</span><span>' + esc(formatDateTime(activeCoverageLastCheckAt)) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Last Claim</span><span>' + esc(activeCoverageLastClaimId || 'None') + '</span></div>'
-            + '<div class="si-btnrow">'
-            + '<button id="si-scan-now" class="si-btn">Scan Now</button>'
-            + '<button id="si-cancel-coverage" class="si-btn alt">Cancel Window</button>'
-            + '</div>'
-        );
-
-        var memberCard = card('Member Summary',
-            '<div class="si-row"><span class="si-label">User</span><span>' + esc(sessionName) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Role</span><span>' + esc(sessionRole) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Selected Plan</span><span>' + esc(selectedPlan) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Claims Total</span><span>' + esc(summary.total) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Pending</span><span>' + esc(summary.pending) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Approved</span><span>' + esc(summary.approved) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Denied</span><span>' + esc(summary.denied) + '</span></div>'
-            + '<div class="si-row"><span class="si-label">Paid</span><span>' + esc(summary.paid) + '</span></div>'
-        );
-
-        return '' + financeCard + memberCard + coverageCard + renderWarStackControls();
+        return financeCard + renderWarStackControls();
     }
 
     function renderPlans() {
@@ -1309,6 +1279,10 @@
                 activeTab = btn.getAttribute('data-tab') || 'overview';
                 saveSession();
                 renderOverlay();
+                if (activeTab === 'overview') {
+                    fetchFinancialSummary();
+                    fetchWarTabState();
+                }
                 if (activeTab === 'claims') fetchSelectedClaimHistory();
             });
         });
@@ -1354,13 +1328,6 @@
 
         var warOffBtn = overlay.querySelector('#si-war-off');
         if (warOffBtn) warOffBtn.addEventListener('click', function () { setWarTabState(false); });
-
-        var refreshOverviewBtn = overlay.querySelector('#si-refresh-overview');
-        if (refreshOverviewBtn) refreshOverviewBtn.addEventListener('click', function () {
-            fetchFinancialSummary();
-            syncClaimsFromBackend();
-            fetchWarTabState();
-        });
 
         var scanNowBtn = overlay.querySelector('#si-scan-now');
         if (scanNowBtn) scanNowBtn.addEventListener('click', runCoverageScan);
