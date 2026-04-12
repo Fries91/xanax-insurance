@@ -89,42 +89,100 @@ def parse_torn_key_info(data: dict[str, Any]) -> dict[str, str]:
 def torn_lookup_user(api_key: str) -> tuple[dict[str, Any] | None, str | None]:
     if not api_key:
         return None, "missing api key"
-    url = f"{TORN_API_BASE}/v2/key/info"
+
+    # 1) Check that the key itself is valid / active
+    key_url = f"{TORN_API_BASE}/v2/key/info"
     try:
-        resp = requests.get(url, headers={"Authorization": f"ApiKey {api_key}"}, timeout=REQUEST_TIMEOUT)
+        resp = requests.get(key_url, headers={"Authorization": f"ApiKey {api_key}"}, timeout=REQUEST_TIMEOUT)
     except requests.Timeout:
         return None, "torn lookup timed out"
     except requests.RequestException:
         return None, "torn lookup failed"
 
     try:
-        data = resp.json()
+        key_data = resp.json()
     except Exception:
-        data = None
+        key_data = None
 
     if resp.status_code != 200:
-        if isinstance(data, dict):
-            err = data.get("error")
+        if isinstance(key_data, dict):
+            err = key_data.get("error")
             if isinstance(err, dict):
                 msg = normalize_text(err.get("error") or err.get("message"))
                 if msg:
                     return None, msg
-            msg = normalize_text(data.get("error") or data.get("message"))
+            msg = normalize_text(key_data.get("error") or key_data.get("message"))
             if msg:
                 return None, msg
         return None, f"torn lookup failed ({resp.status_code})"
 
-    if not isinstance(data, dict):
-        return None, "invalid torn response"
+    if isinstance(key_data, dict):
+        err = key_data.get("error")
+        if isinstance(err, dict):
+            msg = normalize_text(err.get("error") or err.get("message"))
+            return None, msg or "torn api returned an error"
+        if err:
+            return None, normalize_text(err) or "torn api returned an error"
 
-    err = data.get("error")
+    # 2) Read the key owner's actual player/faction identity from user basic
+    # Torn docs note that omitting the user ID returns the key owner's own data.
+    user_url = f"{TORN_API_BASE}/user/?selections=basic&key={api_key}"
+    try:
+        user_resp = requests.get(user_url, timeout=REQUEST_TIMEOUT)
+    except requests.Timeout:
+        return None, "torn user basic timed out"
+    except requests.RequestException:
+        return None, "torn user basic lookup failed"
+
+    try:
+        user_data = user_resp.json()
+    except Exception:
+        user_data = None
+
+    if user_resp.status_code != 200:
+        if isinstance(user_data, dict):
+            err = user_data.get("error")
+            if isinstance(err, dict):
+                msg = normalize_text(err.get("error") or err.get("message"))
+                if msg:
+                    return None, msg
+            msg = normalize_text(user_data.get("error") or user_data.get("message"))
+            if msg:
+                return None, msg
+        return None, f"torn user basic lookup failed ({user_resp.status_code})"
+
+    if not isinstance(user_data, dict):
+        return None, "invalid torn user response"
+
+    err = user_data.get("error")
     if isinstance(err, dict):
         msg = normalize_text(err.get("error") or err.get("message"))
-        return None, msg or "torn api returned an error"
+        return None, msg or "torn user basic returned an error"
     if err:
-        return None, normalize_text(err) or "torn api returned an error"
+        return None, normalize_text(err) or "torn user basic returned an error"
 
-    return data, None
+    # normalize old v1 user/basic payload into the structure parse_torn_key_info expects
+    basic_identity = {
+        "player_id": normalize_text(user_data.get("player_id")),
+        "player_name": normalize_text(user_data.get("name")),
+        "faction_id": normalize_text(user_data.get("faction", {}).get("faction_id") if isinstance(user_data.get("faction"), dict) else ""),
+        "faction_name": normalize_text(user_data.get("faction", {}).get("faction_name") if isinstance(user_data.get("faction"), dict) else ""),
+        "position": normalize_text(user_data.get("faction", {}).get("position") if isinstance(user_data.get("faction"), dict) else ""),
+        "key_info": key_data if isinstance(key_data, dict) else {},
+        "user": {
+            "id": normalize_text(user_data.get("player_id")),
+            "name": normalize_text(user_data.get("name")),
+            "faction_id": normalize_text(user_data.get("faction", {}).get("faction_id") if isinstance(user_data.get("faction"), dict) else ""),
+            "position": normalize_text(user_data.get("faction", {}).get("position") if isinstance(user_data.get("faction"), dict) else ""),
+        },
+        "faction": {
+            "id": normalize_text(user_data.get("faction", {}).get("faction_id") if isinstance(user_data.get("faction"), dict) else ""),
+            "name": normalize_text(user_data.get("faction", {}).get("faction_name") if isinstance(user_data.get("faction"), dict) else ""),
+            "position": normalize_text(user_data.get("faction", {}).get("position") if isinstance(user_data.get("faction"), dict) else ""),
+        }
+    }
+    return basic_identity, None
+
 
 def role_from_position(position: str) -> str:
     p = normalize_text(position).lower()
