@@ -913,7 +913,7 @@
 
     function singleBackendLogin() {
         if (!apiBase || !syncSecret || !singleApiKey) {
-            window.alert('Enter API Base URL, Sync Secret, and Torn API key first.');
+            window.alert('Enter your Torn API key first.');
             return;
         }
 
@@ -1227,15 +1227,16 @@
         return ''
             + card('Torn Login',
                 '<div class="si-field"><label>Torn API Key</label><input id="si-single-api-key" class="si-input" value="' + esc(singleApiKey) + '" placeholder="Enter your Torn API key"></div>'
-                + '<div class="si-field"><label>Faction ID</label><input id="si-faction-id-lock" class="si-input" value="' + esc(factionIdLock) + '" placeholder="Optional faction id"></div>'
-                + '<div class="si-field"><label>Sync Secret</label><input id="si-sync-secret" class="si-input" value="' + esc(syncSecret) + '" placeholder="Backend sync secret"></div>'
-                + '<div class="si-field"><label>API Base URL</label><input id="si-api-base" class="si-input" value="' + esc(apiBase) + '"></div>'
                 + '<div class="si-btnrow">'
-                + '<button id="si-save-settings" class="si-btn">Save</button>'
+                + '<button id="si-save-settings" class="si-btn">Save API Key</button>'
                 + '<button id="si-single-login" class="si-btn good">Login</button>'
                 + '<button id="si-logout" class="si-btn alt">Logout</button>'
                 + '</div>'
-                + '<div class="si-text">One Torn API key is used for member or admin login depending on the key owner.</div>');
+                + '<div class="si-text">Use one Torn API key to log in. The script checks the key owner and signs you in as admin or member automatically.</div>')
+            + card('ToS',
+                '<div class="si-text">By using Sinner\'s Insurance, you agree that claims may be reviewed manually, payouts are not guaranteed until approved by faction staff, and misuse, false claims, or abuse of the system can result in denial or removal from coverage.</div>')
+            + card('API Key Storage and Usage',
+                '<div class="si-text">Your Torn API key is stored locally in your userscript storage on your device so the script can log you in, check your own coverage window, scan for OD-related claim events during an active insured window, and sync your claim data with the Sinner\'s Insurance backend. It is not meant for sharing, resale, or use outside Torn-related insurance functions. Keep your key private, use only the access level needed, and rotate it if you no longer trust the device or script install.</div>');
     }
 
     function bindEvents() {
@@ -1267,12 +1268,9 @@
 
         var saveBtn = overlay.querySelector('#si-save-settings');
         if (saveBtn) saveBtn.addEventListener('click', function () {
-            apiBase = valueOf('#si-api-base') || apiBase;
-            syncSecret = valueOf('#si-sync-secret') || syncSecret;
             singleApiKey = valueOf('#si-single-api-key') || singleApiKey;
             adminApiKey = singleApiKey;
             memberApiKey = singleApiKey;
-            factionIdLock = valueOf('#si-faction-id-lock') || factionIdLock;
             saveSession();
             renderOverlay();
         });
