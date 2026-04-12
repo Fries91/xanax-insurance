@@ -24,6 +24,11 @@
     var backdrop = null;
     var remountTimer = null;
     var historyLoading = false;
+    var warLoading = false;
+    var warEnabled = !!gv('si_war_enabled', 0);
+    var warUpdatedAt = gv('si_war_updated_at', '');
+    var warUpdatedBy = gv('si_war_updated_by', '');
+    var warViewerCanManage = false;
 
     var activeTab = gv('si_active_tab', 'overview');
     var selectedPlan = gv('si_selected_plan', 'None');
@@ -49,6 +54,7 @@
     var lastSyncAt = gv('si_last_sync_at', 'Never');
     var adminApiKey = gv('si_admin_api_key', '');
     var memberApiKey = gv('si_member_api_key', '');
+    var singleApiKey = gv('si_single_api_key', gv('si_member_api_key', ''));
     var factionIdLock = gv('si_faction_id_lock', '');
     var authMode = gv('si_auth_mode', 'local');
 
@@ -58,27 +64,51 @@
             coverage: '6 Xanax',
             payment: '2 Xanax',
             window: '20 mins',
-            payout: 'Admin review',
-            stackType: 'xanax',
-            rule: 'Can start with any amount of energy.'
+            payout: 'Up to 6 Xanax',
+            stackType: 'any',
+            rule: 'Can start with any amount of energy.',
+            oldRows: [
+                ['Coverage', '6 Xanax'],
+                ['Payment', '2 Xanax'],
+                ['Window', '20 mins'],
+                ['Payout', 'Up to 6 Xanax']
+            ]
         },
         {
             name: 'Envy',
             coverage: '25 Xanax + 3 E-DVD',
-            payment: 'Admin set',
+            payment: '2 Xanax + admin approval',
             window: '30 mins',
-            payout: 'Admin review',
+            payout: 'Plan review',
             stackType: 'mixed',
-            rule: 'Coverage window is 30 minutes. Use for approved Envy claims only.'
+            rule: 'Use for approved Envy claims only.',
+            oldRows: [
+                ['Coverage', '25 Xanax + 3 E-DVD'],
+                ['Payment', '2 Xanax'],
+                ['Window', '30 mins'],
+                ['Payout', 'Plan review']
+            ]
         },
         {
             name: 'Wrath',
-            coverage: 'Stage coverage',
-            payment: 'Stage based',
-            window: '1 hour',
-            payout: 'Admin review',
+            coverage: 'Stage based',
+            payment: '5 / 10 / 15 / 20 Xanax',
+            window: '1 hour each stage',
+            payout: '250 / 500 / 750 / 1000',
             stackType: 'xanax',
-            rule: 'Must start at 0 energy. Use only for approved Wrath stage claims.'
+            rule: 'Must start at 0 energy so OD log shows the correct loss stage.',
+            stages: [
+                { stage: 'Stage 1', coverage: '2', payment: '5 Xanax', payout: '250', window: '1 hour' },
+                { stage: 'Stage 2', coverage: '2', payment: '10 Xanax', payout: '500', window: '1 hour' },
+                { stage: 'Stage 3', coverage: '2', payment: '15 Xanax', payout: '750', window: '1 hour' },
+                { stage: 'Stage 4', coverage: '2', payment: '20 Xanax', payout: '1000', window: '1 hour' }
+            ],
+            oldRows: [
+                ['Coverage', 'Stage based'],
+                ['Payment', '5 / 10 / 15 / 20 Xanax'],
+                ['Window', '1 hour each stage'],
+                ['Payout', '250 / 500 / 750 / 1000']
+            ]
         }
     ];
 
@@ -130,8 +160,12 @@
         sv('si_last_sync_at', lastSyncAt || 'Never');
         sv('si_admin_api_key', adminApiKey || '');
         sv('si_member_api_key', memberApiKey || '');
+        sv('si_single_api_key', singleApiKey || '');
         sv('si_faction_id_lock', factionIdLock || '');
         sv('si_auth_mode', authMode || 'local');
+        sv('si_war_enabled', warEnabled ? 1 : 0);
+        sv('si_war_updated_at', warUpdatedAt || '');
+        sv('si_war_updated_by', warUpdatedBy || '');
     }
 
     function isAdmin() {
@@ -160,6 +194,7 @@
         var p = getPlanByName(name);
         if (!p) return true;
         var s = String(stackText || '').toLowerCase();
+        if (p.stackType === 'any') return true;
         if (p.stackType === 'xanax') return s.indexOf('xanax') >= 0;
         if (p.stackType === 'mixed') return s.indexOf('xanax') >= 0 || s.indexOf('dvd') >= 0 || s.indexOf('edvd') >= 0;
         return true;
@@ -366,8 +401,8 @@
     function buildServerAuthPayload() {
         return {
             mode: authMode || 'local',
-            admin_api_key: adminApiKey || '',
-            api_key: memberApiKey || '',
+            admin_api_key: adminApiKey || singleApiKey || '',
+            api_key: memberApiKey || singleApiKey || '',
             faction_id: factionIdLock || ''
         };
     }
@@ -410,6 +445,61 @@
             saveSession();
             renderOverlay();
             return null;
+        });
+    }
+
+
+    function fetchWarState() {
+        if (!syncSecret || warLoading) return Promise.resolve(null);
+        warLoading = true;
+        return apiRequest('POST', '/api/warstack/state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            warLoading = false;
+            var state = data && (data.state || data.warstack);
+            if (state) {
+                warEnabled = !!state.enabled;
+                warUpdatedAt = state.updatedAt || '';
+                warUpdatedBy = state.updatedBy || '';
+                warViewerCanManage = !!state.viewerCanManage;
+                backendStatus = 'War stack loaded';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () {
+            warLoading = false;
+            return null;
+        });
+    }
+
+    function setWarState(enabled) {
+        if (!syncSecret) {
+            window.alert('Enter Sync Secret first.');
+            return;
+        }
+        apiRequest('POST', '/api/warstack/set-state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload(),
+            enabled: enabled ? 1 : 0
+        }).then(function (data) {
+            var state = data && (data.state || data.warstack);
+            if (state) {
+                warEnabled = !!state.enabled;
+                warUpdatedAt = state.updatedAt || '';
+                warUpdatedBy = state.updatedBy || '';
+                warViewerCanManage = !!state.viewerCanManage;
+                backendStatus = 'War stack updated';
+                lastSyncAt = new Date().toLocaleString();
+                saveSession();
+                renderOverlay();
+            } else {
+                window.alert((data && data.error) ? data.error : 'War stack update failed.');
+            }
+        }).catch(function () {
+            window.alert('War stack update failed.');
         });
     }
 
@@ -486,13 +576,17 @@
         });
     }
 
-    function backendAdminLogin() {
-        if (!apiBase || !adminApiKey || !syncSecret) {
-            window.alert('Enter API Base URL, Sync Secret, and Admin API Key first.');
+    function singleBackendLogin() {
+        if (!apiBase || !syncSecret || !singleApiKey) {
+            window.alert('Enter API Base URL, Sync Secret, and Torn API key first.');
             return;
         }
+
+        adminApiKey = singleApiKey;
+        memberApiKey = singleApiKey;
+
         apiRequest('POST', '/api/auth/admin-key-login', {
-            api_key: adminApiKey,
+            api_key: singleApiKey,
             secret: syncSecret
         }).then(function (data) {
             if (data && data.ok && data.user) {
@@ -503,37 +597,30 @@
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
                 renderOverlay();
-            } else {
-                window.alert((data && data.error) ? data.error : 'Admin login failed.');
+                fetchWarState();
+                return;
             }
-        }).catch(function () {
-            window.alert('Admin login failed.');
-        });
-    }
 
-    function backendMemberFactionLogin() {
-        if (!apiBase || !memberApiKey || !factionIdLock || !syncSecret) {
-            window.alert('Enter API Base URL, Sync Secret, Member API Key, and Faction ID first.');
-            return;
-        }
-        apiRequest('POST', '/api/auth/faction-login', {
-            api_key: memberApiKey,
-            faction_id: factionIdLock,
-            secret: syncSecret
-        }).then(function (data) {
-            if (data && data.ok && data.user) {
-                sessionName = data.user.name || 'Member';
-                sessionRole = data.user.role || 'member';
-                authMode = 'backend-faction';
-                backendStatus = 'Member login ok';
-                lastSyncAt = new Date().toLocaleString();
-                saveSession();
-                renderOverlay();
-            } else {
-                window.alert((data && data.error) ? data.error : 'Member login failed.');
-            }
+            return apiRequest('POST', '/api/auth/faction-login', {
+                api_key: singleApiKey,
+                faction_id: factionIdLock || '',
+                secret: syncSecret
+            }).then(function (memberData) {
+                if (memberData && memberData.ok && memberData.user) {
+                    sessionName = memberData.user.name || 'Member';
+                    sessionRole = memberData.user.role || 'member';
+                    authMode = 'backend-faction';
+                    backendStatus = 'Member login ok';
+                    lastSyncAt = new Date().toLocaleString();
+                    saveSession();
+                    renderOverlay();
+                    fetchWarState();
+                } else {
+                    window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
+                }
+            });
         }).catch(function () {
-            window.alert('Member login failed.');
+            window.alert('Login failed.');
         });
     }
 
@@ -648,44 +735,75 @@
         return '<div class="si-tile"><div class="si-tile-num">' + esc(value) + '</div><div class="si-tile-label">' + esc(label) + '</div></div>';
     }
 
+
+    function renderWarStackControls() {
+        var canManage = isAdmin() || sessionRole === 'leader' || sessionRole === 'co-leader';
+        var stateText = warEnabled ? 'Activated' : 'Inactive';
+        var buttons = canManage
+            ? '<div class="si-btnrow">'
+                + '<button id="si-war-on" class="si-btn good">Activate War Stack</button>'
+                + '<button id="si-war-off" class="si-btn alt">Deactivate War Stack</button>'
+              + '</div>'
+            : '<div class="si-text">Login with your Torn API key to manage War Stack.</div>';
+
+        return card('War Stack',
+            '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(stateText) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warUpdatedBy || 'Not set') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(warUpdatedAt || 'Never') + '</span></div>'
+            + buttons
+        );
+    }
+
+    function renderOldPlanRows(rows) {
+        return rows.map(function (row) {
+            return '<div class="si-row"><span class="si-label">' + esc(row[0]) + '</span><span>' + esc(row[1]) + '</span></div>';
+        }).join('');
+    }
+
     function renderOverview() {
         var summary = getMemberClaimSummary();
         return ''
             + card('Overview',
-                '<div class="si-grid3">'
-                + tile(summary.total, 'Claims')
-                + tile(summary.pending, 'Open')
-                + tile(summary.approved, 'Approved')
-                + tile(summary.denied, 'Denied')
-                + tile(summary.paid, 'Paid')
-                + tile('$' + Math.round(summary.payouts), 'Payouts')
-                + '</div>')
-            + card('Current Session',
                 '<div class="si-row"><span class="si-label">User</span><span>' + esc(sessionName) + '</span></div>'
                 + '<div class="si-row"><span class="si-label">Role</span><span>' + esc(sessionRole) + '</span></div>'
                 + '<div class="si-row"><span class="si-label">Selected Plan</span><span>' + esc(selectedPlan) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Claims</span><span>' + esc(summary.total) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Pending</span><span>' + esc(summary.pending) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Approved</span><span>' + esc(summary.approved) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Denied</span><span>' + esc(summary.denied) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Paid</span><span>' + esc(summary.paid) + '</span></div>'
                 + '<div class="si-row"><span class="si-label">Backend</span><span>' + esc(backendStatus) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Last Sync</span><span>' + esc(lastSyncAt) + '</span></div>');
+                + '<div class="si-row"><span class="si-label">Last Sync</span><span>' + esc(lastSyncAt) + '</span></div>')
+            + renderWarStackControls();
     }
 
     function renderPlans() {
         return PLANS.map(function (p) {
-            return '<div class="si-card">'
-                + '<div class="si-plan-head"><div class="si-plan-name">' + esc(p.name) + '</div><div class="si-badge">' + (selectedPlan === p.name ? 'Selected' : 'Plan') + '</div></div>'
-                + '<div class="si-stat-grid">'
-                + '<div class="si-stat"><div class="si-stat-k">Coverage</div><div class="si-stat-v">' + esc(p.coverage) + '</div></div>'
-                + '<div class="si-stat"><div class="si-stat-k">Payment</div><div class="si-stat-v">' + esc(p.payment) + '</div></div>'
-                + '<div class="si-stat"><div class="si-stat-k">Window</div><div class="si-stat-v">' + esc(p.window) + '</div></div>'
-                + '<div class="si-stat"><div class="si-stat-k">Payout</div><div class="si-stat-v">' + esc(getPayoutGuide(p.name)) + '</div></div>'
-                + '</div>'
+            var rows = renderOldPlanRows(p.oldRows || []);
+            var wrathStages = '';
+            if (p.stages && p.stages.length) {
+                wrathStages = '<div class="si-wrath-wrap">'
+                    + p.stages.map(function (s) {
+                        return '<div class="si-wrath-stage">'
+                            + '<div class="si-wrath-title">' + esc(s.stage) + '</div>'
+                            + '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(s.coverage) + '</span></div>'
+                            + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(s.payment) + '</span></div>'
+                            + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(s.payout) + '</span></div>'
+                            + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(s.window) + '</span></div>'
+                            + '</div>';
+                    }).join('') + '</div>';
+            }
+
+            return card(p.name,
+                rows
                 + '<div class="si-text">' + esc(p.rule) + '</div>'
+                + wrathStages
                 + '<div class="si-btnrow">'
                 + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>'
-                + '</div>';
-        }).join('')
-        + card('Selected Plan', '<div class="si-text"><strong>' + esc(selectedPlan) + '</strong></div>');
+            );
+        }).join('') + card('Selected Plan', '<div class="si-text"><strong>' + esc(selectedPlan) + '</strong></div>');
     }
 
     function renderClaims() {
@@ -742,25 +860,17 @@
 
     function renderSettings() {
         return ''
-            + card('Login',
-                '<div class="si-btnstack">'
-                + '<button id="si-local-admin" class="si-btn">Local Admin Login</button>'
-                + '<button id="si-local-member" class="si-btn alt">Local Member Login</button>'
-                + '<button id="si-admin-login" class="si-btn">Backend Admin Login</button>'
-                + '<button id="si-member-login" class="si-btn alt">Backend Member Login</button>'
-                + '<button id="si-logout" class="si-btn bad">Logout</button>'
-                + '</div>')
-            + card('Backend',
-                '<div class="si-field"><label>API Base URL</label><input id="si-api-base" class="si-input" value="' + esc(apiBase) + '"></div>'
-                + '<div class="si-field"><label>Sync Secret</label><input id="si-sync-secret" class="si-input" value="' + esc(syncSecret) + '"></div>'
-                + '<div class="si-field"><label>Admin API Key</label><input id="si-admin-api-key" class="si-input" value="' + esc(adminApiKey) + '"></div>'
-                + '<div class="si-field"><label>Member API Key</label><input id="si-member-api-key" class="si-input" value="' + esc(memberApiKey) + '"></div>'
-                + '<div class="si-field"><label>Faction ID</label><input id="si-faction-id-lock" class="si-input" value="' + esc(factionIdLock) + '"></div>'
-                + '<div class="si-btnstack">'
-                + '<button id="si-save-settings" class="si-btn">Save Settings</button>'
-                + '<button id="si-test-backend" class="si-btn alt">Test Backend</button>'
-                + '<button id="si-pull-claims" class="si-btn alt">Pull Claims</button>'
-                + '</div>');
+            + card('Torn Login',
+                '<div class="si-field"><label>Torn API Key</label><input id="si-single-api-key" class="si-input" value="' + esc(singleApiKey) + '" placeholder="Enter your Torn API key"></div>'
+                + '<div class="si-field"><label>Faction ID</label><input id="si-faction-id-lock" class="si-input" value="' + esc(factionIdLock) + '" placeholder="Optional faction id"></div>'
+                + '<div class="si-field"><label>Sync Secret</label><input id="si-sync-secret" class="si-input" value="' + esc(syncSecret) + '" placeholder="Backend sync secret"></div>'
+                + '<div class="si-field"><label>API Base URL</label><input id="si-api-base" class="si-input" value="' + esc(apiBase) + '"></div>'
+                + '<div class="si-btnrow">'
+                + '<button id="si-save-settings" class="si-btn">Save</button>'
+                + '<button id="si-single-login" class="si-btn good">Login</button>'
+                + '<button id="si-logout" class="si-btn alt">Logout</button>'
+                + '</div>'
+                + '<div class="si-text">One Torn API key is used for member or admin login depending on the key owner.</div>');
     }
 
     function bindEvents() {
@@ -791,8 +901,9 @@
         if (saveBtn) saveBtn.addEventListener('click', function () {
             apiBase = valueOf('#si-api-base') || apiBase;
             syncSecret = valueOf('#si-sync-secret') || syncSecret;
-            adminApiKey = valueOf('#si-admin-api-key') || adminApiKey;
-            memberApiKey = valueOf('#si-member-api-key') || memberApiKey;
+            singleApiKey = valueOf('#si-single-api-key') || singleApiKey;
+            adminApiKey = singleApiKey;
+            memberApiKey = singleApiKey;
             factionIdLock = valueOf('#si-faction-id-lock') || factionIdLock;
             saveSession();
             renderOverlay();
@@ -807,17 +918,14 @@
         var pullBtn = overlay.querySelector('#si-pull-claims');
         if (pullBtn) pullBtn.addEventListener('click', syncClaimsFromBackend);
 
-        var adminLoginBtn = overlay.querySelector('#si-admin-login');
-        if (adminLoginBtn) adminLoginBtn.addEventListener('click', backendAdminLogin);
+        var singleLoginBtn = overlay.querySelector('#si-single-login');
+        if (singleLoginBtn) singleLoginBtn.addEventListener('click', singleBackendLogin);
 
-        var memberLoginBtn = overlay.querySelector('#si-member-login');
-        if (memberLoginBtn) memberLoginBtn.addEventListener('click', backendMemberFactionLogin);
+        var warOnBtn = overlay.querySelector('#si-war-on');
+        if (warOnBtn) warOnBtn.addEventListener('click', function () { setWarState(true); });
 
-        var localAdminBtn = overlay.querySelector('#si-local-admin');
-        if (localAdminBtn) localAdminBtn.addEventListener('click', function () { localLogin('admin'); });
-
-        var localMemberBtn = overlay.querySelector('#si-local-member');
-        if (localMemberBtn) localMemberBtn.addEventListener('click', function () { localLogin('member'); });
+        var warOffBtn = overlay.querySelector('#si-war-off');
+        if (warOffBtn) warOffBtn.addEventListener('click', function () { setWarState(false); });
 
         var logoutBtn = overlay.querySelector('#si-logout');
         if (logoutBtn) logoutBtn.addEventListener('click', logoutSession);
@@ -869,7 +977,7 @@
 
         overlay.innerHTML = ''
             + '<div class="si-head">'
-            + '<div><div class="si-title">Sinners Insurance</div><div class="si-sub">7DS claim panel</div></div>'
+            + '<div><div class="si-title">Sinners Insurance</div><div class="si-sub">thin classic panel</div></div>'
             + '<button id="si-close-btn" class="si-close" type="button">×</button>'
             + '</div>'
             + '<div class="si-tabs">'
@@ -886,22 +994,22 @@
     function addStyles() {
         if (document.getElementById('si-pda-style-flag')) return;
         GM_addStyle(`
-#si-pda-launcher{position:fixed!important;left:10px!important;bottom:10px!important;z-index:2147483647!important;width:160px!important;height:42px!important;display:flex!important;align-items:center!important;justify-content:center!important;}
-#si-pda-launcher button{width:160px!important;height:42px!important;border-radius:12px!important;border:1px solid rgba(205,164,74,.5)!important;background:linear-gradient(180deg,rgba(90,12,18,.95),rgba(35,8,10,.98))!important;color:#f5df9d!important;font-size:12px!important;font-weight:800!important;letter-spacing:.3px!important;box-shadow:0 8px 20px rgba(0,0,0,.35)!important;}
+#si-pda-launcher{position:fixed!important;left:10px!important;bottom:10px!important;z-index:2147483647!important;width:132px!important;height:34px!important;display:flex!important;align-items:center!important;justify-content:center!important;}
+#si-pda-launcher button{width:132px!important;height:34px!important;border-radius:10px!important;border:1px solid rgba(205,164,74,.5)!important;background:linear-gradient(180deg,rgba(90,12,18,.95),rgba(35,8,10,.98))!important;color:#f5df9d!important;font-size:11px!important;font-weight:800!important;letter-spacing:.2px!important;box-shadow:0 8px 20px rgba(0,0,0,.35)!important;}
 #si-pda-backdrop{position:fixed!important;inset:0!important;background:rgba(0,0,0,.62)!important;z-index:2147483645!important;display:none!important;}
 #si-pda-backdrop.open{display:block!important;}
-#si-pda-overlay{position:fixed!important;left:8px!important;right:8px!important;top:72px!important;bottom:72px!important;z-index:2147483646!important;display:none!important;flex-direction:column!important;overflow:hidden!important;border-radius:16px!important;border:1px solid rgba(201,162,80,.25)!important;background:linear-gradient(180deg,rgba(28,10,14,.99),rgba(8,5,8,.99))!important;color:#f7ead0!important;box-shadow:0 20px 55px rgba(0,0,0,.55)!important;}
+#si-pda-overlay{position:fixed!important;left:10px!important;right:10px!important;top:78px!important;bottom:84px!important;z-index:2147483646!important;display:none!important;flex-direction:column!important;overflow:hidden!important;border-radius:14px!important;border:1px solid rgba(201,162,80,.22)!important;background:linear-gradient(180deg,rgba(28,10,14,.99),rgba(8,5,8,.99))!important;color:#f7ead0!important;box-shadow:0 20px 55px rgba(0,0,0,.55)!important;}
 #si-pda-overlay.open{display:flex!important;}
-#si-pda-overlay .si-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:14px!important;border-bottom:1px solid rgba(201,162,80,.18)!important;}
-#si-pda-overlay .si-title{font-size:16px!important;font-weight:900!important;color:#f2de9f!important;text-transform:uppercase!important;}
-#si-pda-overlay .si-sub{font-size:11px!important;color:rgba(241,223,171,.78)!important;text-transform:uppercase!important;}
+#si-pda-overlay .si-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;padding:10px 12px!important;border-bottom:1px solid rgba(201,162,80,.18)!important;}
+#si-pda-overlay .si-title{font-size:14px!important;font-weight:900!important;color:#f2de9f!important;text-transform:uppercase!important;}
+#si-pda-overlay .si-sub{font-size:10px!important;color:rgba(241,223,171,.78)!important;text-transform:uppercase!important;}
 #si-pda-overlay .si-close{width:40px!important;height:40px!important;border-radius:10px!important;border:1px solid rgba(201,162,80,.22)!important;background:linear-gradient(180deg,rgba(72,14,18,.96),rgba(24,7,10,.98))!important;color:#f2de9f!important;font-size:22px!important;}
-#si-pda-overlay .si-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:6px!important;padding:10px 10px 0!important;}
-#si-pda-overlay .si-tab{min-height:38px!important;border-radius:10px!important;border:1px solid rgba(201,162,80,.16)!important;background:linear-gradient(180deg,rgba(60,12,16,.85),rgba(24,7,10,.92))!important;color:#f1dfab!important;font-size:11px!important;font-weight:800!important;}
+#si-pda-overlay .si-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:5px!important;padding:8px 8px 0!important;}
+#si-pda-overlay .si-tab{min-height:32px!important;border-radius:9px!important;border:1px solid rgba(201,162,80,.16)!important;background:linear-gradient(180deg,rgba(60,12,16,.85),rgba(24,7,10,.92))!important;color:#f1dfab!important;font-size:10px!important;font-weight:800!important;}
 #si-pda-overlay .si-tab.active{background:linear-gradient(180deg,rgba(124,19,26,.95),rgba(64,10,15,.98))!important;}
-#si-pda-overlay .si-body{overflow:auto!important;padding:10px!important;display:grid!important;gap:10px!important;}
-#si-pda-overlay .si-card{border-radius:14px!important;border:1px solid rgba(201,162,80,.14)!important;background:rgba(255,255,255,.03)!important;padding:12px!important;}
-#si-pda-overlay .si-card-title{font-size:12px!important;font-weight:900!important;color:#f0dd9f!important;text-transform:uppercase!important;margin-bottom:10px!important;}
+#si-pda-overlay .si-body{overflow:auto!important;padding:8px!important;display:grid!important;gap:8px!important;}
+#si-pda-overlay .si-card{border-radius:12px!important;border:1px solid rgba(201,162,80,.14)!important;background:rgba(255,255,255,.03)!important;padding:10px!important;}
+#si-pda-overlay .si-card-title{font-size:11px!important;font-weight:900!important;color:#f0dd9f!important;text-transform:uppercase!important;margin-bottom:8px!important;}
 #si-pda-overlay .si-grid3{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}
 #si-pda-overlay .si-tile{border-radius:10px!important;padding:10px!important;background:rgba(255,255,255,.02)!important;border:1px solid rgba(201,162,80,.12)!important;text-align:center!important;}
 #si-pda-overlay .si-tile-num{font-size:16px!important;font-weight:900!important;color:#f7e4a7!important;}
@@ -928,6 +1036,9 @@
 #si-pda-overlay .si-textarea{min-height:92px!important;resize:none!important;}
 #si-pda-overlay .si-history-item{border-radius:10px!important;background:rgba(255,255,255,.02)!important;border:1px solid rgba(201,162,80,.10)!important;padding:10px!important;margin-bottom:8px!important;}
 #si-pda-overlay .si-history-at{font-size:10px!important;color:rgba(241,223,171,.72)!important;margin-bottom:4px!important;}
+#si-pda-overlay .si-wrath-wrap{display:grid!important;gap:8px!important;margin:8px 0!important;}
+#si-pda-overlay .si-wrath-stage{border-radius:10px!important;padding:8px!important;background:rgba(255,255,255,.02)!important;border:1px solid rgba(201,162,80,.12)!important;}
+#si-pda-overlay .si-wrath-title{font-size:11px!important;font-weight:900!important;color:#f7e4a7!important;text-transform:uppercase!important;margin-bottom:6px!important;}
 `);
         var flag = document.createElement('div');
         flag.id = 'si-pda-style-flag';
@@ -956,7 +1067,7 @@
         if (!launcher || !document.body.contains(launcher)) {
             launcher = document.createElement('div');
             launcher.id = 'si-pda-launcher';
-            launcher.innerHTML = '<button type="button">💊 Sinners Insurance</button>';
+            launcher.innerHTML = '<button type="button">💊 Sinners</button>';
             document.body.appendChild(launcher);
             var btn = launcher.querySelector('button');
             if (btn) btn.addEventListener('click', openOverlay);
@@ -966,6 +1077,7 @@
     function boot() {
         ensureMounted();
         renderOverlay();
+        if (syncSecret) fetchWarState();
         if (!remountTimer) {
             remountTimer = setInterval(function () {
                 if (!document.body) return;
