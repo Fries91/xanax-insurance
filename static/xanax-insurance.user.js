@@ -121,10 +121,10 @@
             stackType: 'xanax',
             rule: 'Each stage has a required starting energy amount and must be armed on the matching stage.',
             stages: [
-                { stage: 'Stage 1', coverage: '2 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
-                { stage: 'Stage 2', coverage: '2 Xanax', payment: '2 Xanax', payout: '10 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
-                { stage: 'Stage 3', coverage: '2 Xanax', payment: '2 Xanax', payout: '15 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
-                { stage: 'Stage 4', coverage: '2 Xanax', payment: '2 Xanax', payout: '20 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
+                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
+                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '10 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
+                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '15 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
+                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '20 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
                 ['Coverage', 'Stage based'],
@@ -1193,19 +1193,7 @@
             + '<div class="si-row"><span class="si-label">Admin Payouts Verified</span><span>' + esc(finPayoutCount) + '</span></div>'
         );
 
-        var coverageInfo = '';
-        if (activeCoveragePlan) {
-            coverageInfo = card('Active Coverage',
-                '<div class="si-row"><span class="si-label">Plan</span><span>' + esc(activeCoveragePlan || 'None') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Stage</span><span>' + esc(activeCoverageStage || '-') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(getPlanPayoutText(activeCoveragePlan, activeCoverageStage) || '-') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(isCoverageActive() ? 'Active' : (activeCoverageDetectStatus || 'Idle')) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Expires</span><span>' + esc(formatDateTime(activeCoverageExpiresAt)) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Remaining</span><span>' + esc(isCoverageActive() ? formatRemaining(currentCoverageRemainingMs()) : 'Not active') + '</span></div>'
-            );
-        }
-
-        return financeCard + coverageInfo + renderWarStackControls();
+        return financeCard + renderWarStackControls();
     }
 
     function renderPlans() {
@@ -1228,7 +1216,6 @@
 
             var activateButtons = '<div class="si-btnrow">'
                 + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
-                + '<button class="si-btn good" data-action="arm-plan" data-plan="' + esc(p.name) + '">Activate</button>'
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>';
 
