@@ -66,6 +66,17 @@
     var factionIdLock = gv('si_faction_id_lock', '49384');
     var authMode = gv('si_auth_mode', 'local');
     var settingsNotice = gv('si_settings_notice', 'Waiting for API key save or login.');
+    var xanaxRequestTotalOwed = Number(gv('si_xr_total_owed', 0) || 0);
+    var xanaxRequestRequested = !!gv('si_xr_requested', 0);
+    var xanaxRequestRequestedAt = gv('si_xr_requested_at', '');
+    var xanaxRequestRequestedBy = gv('si_xr_requested_by', '');
+    var xanaxRequestSentAt = gv('si_xr_sent_at', '');
+    var xanaxRequestSentBy = gv('si_xr_sent_by', '');
+    var xanaxRequestResetAt = gv('si_xr_reset_at', '');
+    var xanaxRequestResetBy = gv('si_xr_reset_by', '');
+    var xanaxRequestStatus = gv('si_xr_status', 'idle');
+    var xanaxRequestViewerCanRequest = false;
+    var xanaxRequestViewerIsAdmin = false;
 
     var scanTimer = null;
     var activeCoverageEnabled = !!gv('si_active_coverage_enabled', 0);
@@ -195,6 +206,15 @@
         sv('si_faction_id_lock', factionIdLock || '');
         sv('si_auth_mode', authMode || 'local');
         sv('si_settings_notice', settingsNotice || '');
+        sv('si_xr_total_owed', xanaxRequestTotalOwed || 0);
+        sv('si_xr_requested', xanaxRequestRequested ? 1 : 0);
+        sv('si_xr_requested_at', xanaxRequestRequestedAt || '');
+        sv('si_xr_requested_by', xanaxRequestRequestedBy || '');
+        sv('si_xr_sent_at', xanaxRequestSentAt || '');
+        sv('si_xr_sent_by', xanaxRequestSentBy || '');
+        sv('si_xr_reset_at', xanaxRequestResetAt || '');
+        sv('si_xr_reset_by', xanaxRequestResetBy || '');
+        sv('si_xr_status', xanaxRequestStatus || 'idle');
         sv('si_active_coverage_enabled', activeCoverageEnabled ? 1 : 0);
         sv('si_active_coverage_plan', activeCoveragePlan || '');
         sv('si_active_coverage_stage', activeCoverageStage || '');
@@ -1017,6 +1037,7 @@
                 renderOverlay();
                 fetchWarTabState();
                 fetchFinancialSummary();
+                fetchXanaxRequestState();
                 syncClaimsFromBackend();
                 return;
             }
@@ -1157,6 +1178,107 @@
 
     function tile(value, label) {
         return '<div class="si-tile"><div class="si-tile-num">' + esc(value) + '</div><div class="si-tile-label">' + esc(label) + '</div></div>';
+    }
+
+
+    function fetchXanaxRequestState() {
+        if (!syncSecret) return Promise.resolve(null);
+        return apiRequest('POST', '/api/xanax-request/state', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            var state = data && data.state;
+            if (state) {
+                xanaxRequestTotalOwed = Number(state.totalOwed || 0);
+                xanaxRequestRequested = !!state.requested;
+                xanaxRequestRequestedAt = state.requestedAt || '';
+                xanaxRequestRequestedBy = state.requestedBy || '';
+                xanaxRequestSentAt = state.sentAt || '';
+                xanaxRequestSentBy = state.sentBy || '';
+                xanaxRequestResetAt = state.resetAt || '';
+                xanaxRequestResetBy = state.resetBy || '';
+                xanaxRequestStatus = state.status || 'idle';
+                xanaxRequestViewerCanRequest = !!state.viewerCanRequest;
+                xanaxRequestViewerIsAdmin = !!state.viewerIsAdmin;
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () { return null; });
+    }
+
+    function requestXanaxCut() {
+        return apiRequest('POST', '/api/xanax-request/request', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            if (data && data.state) {
+                window.alert('Faction cut request sent to admin.');
+                return fetchXanaxRequestState();
+            }
+            window.alert((data && data.error) ? data.error : 'Request failed.');
+            return data;
+        }).catch(function () {
+            window.alert('Request failed.');
+            return null;
+        });
+    }
+
+    function markXanaxCutSent() {
+        return apiRequest('POST', '/api/xanax-request/mark-sent', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            if (data && data.state) {
+                window.alert('Faction cut marked as sent.');
+                return fetchXanaxRequestState();
+            }
+            window.alert((data && data.error) ? data.error : 'Mark sent failed.');
+            return data;
+        }).catch(function () {
+            window.alert('Mark sent failed.');
+            return null;
+        });
+    }
+
+    function resetXanaxCutTotal() {
+        return apiRequest('POST', '/api/xanax-request/reset', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            if (data && data.state) {
+                window.alert('Faction cut total reset.');
+                return fetchXanaxRequestState();
+            }
+            window.alert((data && data.error) ? data.error : 'Reset failed.');
+            return data;
+        }).catch(function () {
+            window.alert('Reset failed.');
+            return null;
+        });
+    }
+
+    function renderXanaxRequest() {
+        var requestBtn = xanaxRequestViewerCanRequest
+            ? '<div class="si-btnrow"><button id="si-xr-request" class="si-btn good">Request 15% Faction Cut</button></div>'
+            : '<div class="si-text">Leader and Co-Leader can request the faction cut. Admin can send and reset it.</div>';
+
+        var adminBtns = xanaxRequestViewerIsAdmin
+            ? '<div class="si-btnrow"><button id="si-xr-sent" class="si-btn">Mark Sent</button><button id="si-xr-reset" class="si-btn alt">Reset Total Owed</button></div>'
+            : '';
+
+        return card('Xanax Request',
+            '<div class="si-row"><span class="si-label">Total Owed</span><span>' + esc(xanaxRequestTotalOwed + ' Xanax') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Status</span><span>' + esc(xanaxRequestStatus || 'idle') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Requested By</span><span>' + esc(xanaxRequestRequestedBy || 'Not requested') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Requested At</span><span>' + esc(formatDateTime(xanaxRequestRequestedAt)) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Sent By</span><span>' + esc(xanaxRequestSentBy || 'Not sent') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Sent At</span><span>' + esc(formatDateTime(xanaxRequestSentAt)) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Last Reset By</span><span>' + esc(xanaxRequestResetBy || 'Never') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Last Reset At</span><span>' + esc(formatDateTime(xanaxRequestResetAt)) + '</span></div>'
+            + requestBtn
+            + adminBtns
+        );
     }
 
 
@@ -1321,6 +1443,7 @@
                     fetchFinancialSummary();
                     fetchWarTabState();
                 }
+                if (activeTab === 'xanax_request') fetchXanaxRequestState();
                 if (activeTab === 'claims') fetchSelectedClaimHistory();
             });
         });
@@ -1374,6 +1497,15 @@
         var cancelCoverageBtn = overlay.querySelector('#si-cancel-coverage');
         if (cancelCoverageBtn) cancelCoverageBtn.addEventListener('click', cancelCoverageState);
 
+        var xrRequestBtn = overlay.querySelector('#si-xr-request');
+        if (xrRequestBtn) xrRequestBtn.addEventListener('click', requestXanaxCut);
+
+        var xrSentBtn = overlay.querySelector('#si-xr-sent');
+        if (xrSentBtn) xrSentBtn.addEventListener('click', markXanaxCutSent);
+
+        var xrResetBtn = overlay.querySelector('#si-xr-reset');
+        if (xrResetBtn) xrResetBtn.addEventListener('click', resetXanaxCutTotal);
+
         var logoutBtn = overlay.querySelector('#si-logout');
         if (logoutBtn) logoutBtn.addEventListener('click', logoutSession);
 
@@ -1420,6 +1552,7 @@
         var body = renderOverview();
         if (activeTab === 'plans') body = renderPlans();
         if (activeTab === 'claims') body = renderClaims();
+        if (activeTab === 'xanax_request') body = renderXanaxRequest();
         if (activeTab === 'settings') body = renderSettings();
 
         overlay.innerHTML = ''
@@ -1431,6 +1564,7 @@
             + '<button class="si-tab ' + (activeTab === 'overview' ? 'active' : '') + '" data-tab="overview">Overview</button>'
             + '<button class="si-tab ' + (activeTab === 'plans' ? 'active' : '') + '" data-tab="plans">Plans</button>'
             + '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims</button>'
+            + '<button class="si-tab ' + (activeTab === 'xanax_request' ? 'active' : '') + '" data-tab="xanax_request">Xanax Request</button>'
             + '<button class="si-tab ' + (activeTab === 'settings' ? 'active' : '') + '" data-tab="settings">Settings</button>'
             + '</div>'
             + '<div class="si-body">' + body + '</div>';
@@ -1524,6 +1658,7 @@
     function boot() {
         ensureMounted();
         ensureCoverageTimer();
+        fetchXanaxRequestState();
         renderOverlay();
         if (syncSecret) {
             fetchWarTabState();
