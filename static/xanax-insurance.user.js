@@ -14,6 +14,7 @@
 // @updateURL    https://raw.githubusercontent.com/Fries91/xanax-insurance/main/static/xanax-insurance.user.js
 // @downloadURL  https://raw.githubusercontent.com/Fries91/xanax-insurance/main/static/xanax-insurance.user.js
 // @connect      xanax-insurance.onrender.com
+// @connect      api.torn.com
 // ==/UserScript==
 
 (function () {
@@ -49,14 +50,29 @@
     var claimFilterMember = gv('si_claim_filter_member', '');
     var claimSortMode = gv('si_claim_sort_mode', 'newest');
     var apiBase = gv('si_api_base', 'https://xanax-insurance.onrender.com');
-    var syncSecret = gv('si_sync_secret', '');
+    var syncSecret = gv('si_sync_secret', '6282');
     var backendStatus = gv('si_backend_status', 'Not tested');
     var lastSyncAt = gv('si_last_sync_at', 'Never');
     var adminApiKey = gv('si_admin_api_key', '');
     var memberApiKey = gv('si_member_api_key', '');
     var singleApiKey = gv('si_single_api_key', gv('si_member_api_key', ''));
-    var factionIdLock = gv('si_faction_id_lock', '');
+    var factionIdLock = gv('si_faction_id_lock', '49384');
     var authMode = gv('si_auth_mode', 'local');
+
+    var scanTimer = null;
+    var activeCoverageEnabled = !!gv('si_active_coverage_enabled', 0);
+    var activeCoveragePlan = gv('si_active_coverage_plan', '');
+    var activeCoverageStage = gv('si_active_coverage_stage', '');
+    var activeCoverageArmedAt = gv('si_active_coverage_armed_at', '');
+    var activeCoverageExpiresAt = gv('si_active_coverage_expires_at', '');
+    var activeCoverageDetectStatus = gv('si_active_coverage_detect_status', 'idle');
+    var activeCoverageLastCheckAt = gv('si_active_coverage_last_check_at', '');
+    var activeCoverageLastEventKey = gv('si_active_coverage_last_event_key', '');
+    var activeCoverageLastClaimId = gv('si_active_coverage_last_claim_id', '');
+    var activeCoverageAutoSubmittedAt = gv('si_active_coverage_auto_submitted_at', '');
+    var activeCoverageArmedEnergy = gv('si_active_coverage_armed_energy', '');
+    var activeCoverageArmedBoosterCd = gv('si_active_coverage_armed_booster_cd', '');
+    var activeCoverageRuleCheck = gv('si_active_coverage_rule_check', '');
 
     var PLANS = [
         {
@@ -163,6 +179,19 @@
         sv('si_single_api_key', singleApiKey || '');
         sv('si_faction_id_lock', factionIdLock || '');
         sv('si_auth_mode', authMode || 'local');
+        sv('si_active_coverage_enabled', activeCoverageEnabled ? 1 : 0);
+        sv('si_active_coverage_plan', activeCoveragePlan || '');
+        sv('si_active_coverage_stage', activeCoverageStage || '');
+        sv('si_active_coverage_armed_at', activeCoverageArmedAt || '');
+        sv('si_active_coverage_expires_at', activeCoverageExpiresAt || '');
+        sv('si_active_coverage_detect_status', activeCoverageDetectStatus || 'idle');
+        sv('si_active_coverage_last_check_at', activeCoverageLastCheckAt || '');
+        sv('si_active_coverage_last_event_key', activeCoverageLastEventKey || '');
+        sv('si_active_coverage_last_claim_id', activeCoverageLastClaimId || '');
+        sv('si_active_coverage_auto_submitted_at', activeCoverageAutoSubmittedAt || '');
+        sv('si_active_coverage_armed_energy', activeCoverageArmedEnergy || '');
+        sv('si_active_coverage_armed_booster_cd', activeCoverageArmedBoosterCd || '');
+        sv('si_active_coverage_rule_check', activeCoverageRuleCheck || '');
         sv('si_war_enabled', warEnabled ? 1 : 0);
         sv('si_war_updated_at', warUpdatedAt || '');
         sv('si_war_updated_by', warUpdatedBy || '');
@@ -198,6 +227,303 @@
         if (p.stackType === 'xanax') return s.indexOf('xanax') >= 0;
         if (p.stackType === 'mixed') return s.indexOf('xanax') >= 0 || s.indexOf('dvd') >= 0 || s.indexOf('edvd') >= 0;
         return true;
+    }
+
+
+    function toMs(value) {
+        var t = Date.parse(String(value || ''));
+        return isNaN(t) ? 0 : t;
+    }
+
+    function nowMs() {
+        return Date.now();
+    }
+
+    function formatDateTime(value) {
+        var ms = toMs(value);
+        return ms ? new Date(ms).toLocaleString() : 'Not set';
+    }
+
+    function formatRemaining(ms) {
+        ms = Number(ms || 0);
+        if (ms <= 0) return 'Expired';
+        var total = Math.floor(ms / 1000);
+        var h = Math.floor(total / 3600);
+        var m = Math.floor((total % 3600) / 60);
+        var s = total % 60;
+        if (h > 0) return h + 'h ' + m + 'm ' + s + 's';
+        return m + 'm ' + s + 's';
+    }
+
+    function getPlanStackLabel(name) {
+        var p = getPlanByName(name);
+        if (!p) return 'Unknown';
+        if (p.stackType === 'xanax') return 'Xanax';
+        if (p.stackType === 'mixed') return 'Mixed';
+        return 'Any';
+    }
+
+    function getPlanWindowMinutes(name, stageName) {
+        if (name === 'Wrath') {
+            return 60;
+        }
+        if (name === 'Envy') return 30;
+        if (name === 'Pride') return 20;
+        return 30;
+    }
+
+    function getPlanPayoutText(name, stageName) {
+        if (name === 'Wrath') {
+            var p = getPlanByName(name);
+            if (p && p.stages) {
+                var s = p.stages.find(function (x) { return x.stage === stageName; }) || p.stages[0];
+                if (s) return s.payout;
+            }
+        }
+        return getPayoutGuide(name);
+    }
+
+    function getPlanRuleForActivation(name, stageName) {
+        if (name === 'Wrath') {
+            return 'Wrath active' + (stageName ? ' - ' + stageName : '') + '. Must start at 0 energy.';
+        }
+        return getPlanRuleText(name);
+    }
+
+    function currentCoverageRemainingMs() {
+        return Math.max(0, toMs(activeCoverageExpiresAt) - nowMs());
+    }
+
+    function isCoverageActive() {
+        if (!activeCoverageEnabled) return false;
+        var expires = toMs(activeCoverageExpiresAt);
+        return !!expires && expires > nowMs();
+    }
+
+    function clearCoverageState(reason) {
+        activeCoverageEnabled = false;
+        activeCoveragePlan = '';
+        activeCoverageStage = '';
+        activeCoverageArmedAt = '';
+        activeCoverageExpiresAt = '';
+        activeCoverageDetectStatus = reason || 'idle';
+        activeCoverageArmedEnergy = '';
+        activeCoverageArmedBoosterCd = '';
+        activeCoverageRuleCheck = '';
+        saveSession();
+    }
+
+    function armPlanCoverage(name, stageName) {
+        if (!isMember()) {
+            window.alert('Log in first.');
+            return;
+        }
+        if (!name || name === 'None') {
+            window.alert('Select a plan first.');
+            return;
+        }
+
+        var now = new Date();
+        var mins = getPlanWindowMinutes(name, stageName);
+        var expiry = new Date(now.getTime() + (mins * 60000));
+
+        selectedPlan = name;
+        activeCoverageEnabled = true;
+        activeCoveragePlan = name;
+        activeCoverageStage = stageName || '';
+        activeCoverageArmedAt = now.toISOString();
+        activeCoverageExpiresAt = expiry.toISOString();
+        activeCoverageDetectStatus = 'armed';
+        activeCoverageLastCheckAt = '';
+        activeCoverageLastEventKey = '';
+        activeCoverageLastClaimId = '';
+        activeCoverageAutoSubmittedAt = '';
+        activeCoverageArmedEnergy = '';
+        activeCoverageArmedBoosterCd = '';
+        activeCoverageRuleCheck = getPlanRuleForActivation(name, stageName);
+        saveSession();
+        renderOverlay();
+        window.alert(name + (stageName ? ' ' + stageName : '') + ' activated for ' + mins + ' minutes.');
+        runCoverageScan();
+    }
+
+    function cancelCoverageState() {
+        clearCoverageState('cancelled');
+        renderOverlay();
+    }
+
+    function parseScanTimestamp(entry) {
+        var candidates = [
+            entry && entry.timestamp,
+            entry && entry.started,
+            entry && entry.time,
+            entry && entry.createdAt,
+            entry && entry.at
+        ];
+        for (var i = 0; i < candidates.length; i += 1) {
+            var v = candidates[i];
+            if (typeof v === 'number' && isFinite(v)) {
+                return v > 1000000000000 ? v : (v * 1000);
+            }
+            var ms = toMs(v);
+            if (ms) return ms;
+        }
+        return 0;
+    }
+
+    function collectLogEntries(data) {
+        var out = [];
+        function pushOne(key, entry) {
+            if (!entry) return;
+            var text = '';
+            if (typeof entry === 'string') text = entry;
+            if (!text) text = [entry.title, entry.type, entry.text, entry.description, entry.details, entry.reason, entry.message].filter(Boolean).join(' | ');
+            out.push({
+                key: String(key || entry.id || parseScanTimestamp(entry) || out.length),
+                text: String(text || ''),
+                timestampMs: parseScanTimestamp(entry),
+                raw: entry
+            });
+        }
+
+        var sources = [data && data.log, data && data.logs, data && data.events, data && data.event];
+        sources.forEach(function (src) {
+            if (!src) return;
+            if (Array.isArray(src)) {
+                src.forEach(function (entry, idx) { pushOne(idx, entry); });
+            } else if (typeof src === 'object') {
+                Object.keys(src).forEach(function (key) { pushOne(key, src[key]); });
+            }
+        });
+        return out;
+    }
+
+    function findOdLikeEvent(data) {
+        var armedAtMs = toMs(activeCoverageArmedAt);
+        var expiryMs = toMs(activeCoverageExpiresAt);
+        var logEntries = collectLogEntries(data);
+        for (var i = 0; i < logEntries.length; i += 1) {
+            var item = logEntries[i];
+            var txt = String(item.text || '').toLowerCase();
+            if (txt.indexOf('overdose') >= 0 || txt.indexOf('overdosed') >= 0 || txt.indexOf('over dos') >= 0 || txt.indexOf('rehab') >= 0) {
+                var ts = item.timestampMs || nowMs();
+                if (ts >= armedAtMs && ts <= expiryMs) return item;
+            }
+        }
+
+        var profile = data && (data.profile || data.user || data.player || data);
+        var status = profile && profile.status;
+        var statusText = [
+            status && status.description,
+            status && status.details,
+            status && status.state,
+            status && status.reason,
+            profile && profile.status_description,
+            profile && profile.status_details
+        ].filter(Boolean).join(' | ').toLowerCase();
+
+        if (statusText.indexOf('overdose') >= 0 || statusText.indexOf('overdosed') >= 0) {
+            return {
+                key: 'status-' + Math.floor(nowMs() / 30000),
+                text: statusText || 'Status indicates overdose.',
+                timestampMs: nowMs(),
+                raw: status || {}
+            };
+        }
+
+        return null;
+    }
+
+    function fetchTornScanData(apiKey) {
+        if (!apiKey) return Promise.resolve(null);
+        var url = 'https://api.torn.com/user/?selections=profile,log&key=' + encodeURIComponent(apiKey);
+        return new Promise(function (resolve) {
+            if (typeof GM_xmlhttpRequest === 'function') {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: url,
+                    onload: function (res) {
+                        try { resolve(JSON.parse(res.responseText || '{}')); } catch (e) { resolve(null); }
+                    },
+                    onerror: function () { resolve(null); }
+                });
+                return;
+            }
+            fetch(url).then(function (r) { return r.json(); }).then(resolve).catch(function () { resolve(null); });
+        });
+    }
+
+    function createAutoDetectedClaim(eventInfo) {
+        if (!eventInfo || activeCoverageLastEventKey === String(eventInfo.key || '')) return;
+        if (!isCoverageActive()) return;
+
+        var payoutText = getPlanPayoutText(activeCoveragePlan, activeCoverageStage);
+        var proofText = 'Auto OD detect | ' + formatDateTime(new Date(eventInfo.timestampMs || nowMs()).toISOString()) + ' | ' + String(eventInfo.text || 'OD event');
+        claimId = makeClaimId();
+        selectedClaimId = claimId;
+        selectedPlan = activeCoveragePlan || selectedPlan;
+        claimStatus = 'Pending review';
+        claimNote = 'Auto-detected OD during active ' + activeCoveragePlan + (activeCoverageStage ? ' ' + activeCoverageStage : '') + ' window.';
+        claimLoss = payoutText;
+        claimProof = proofText;
+        claimStack = getPlanStackLabel(activeCoveragePlan);
+        payoutAmount = '';
+        decisionNote = '';
+        activeCoverageDetectStatus = 'auto-claim-submitted';
+        activeCoverageLastEventKey = String(eventInfo.key || '');
+        activeCoverageLastClaimId = claimId;
+        activeCoverageAutoSubmittedAt = new Date().toISOString();
+        upsertCurrentClaim();
+        addHistory('Auto-detected OD and created claim ' + claimId + '.');
+        saveSession();
+        pushCurrentClaimToBackend('auto_detect');
+        renderOverlay();
+    }
+
+    function runCoverageScan() {
+        if (!isCoverageActive()) {
+            if (activeCoverageEnabled && currentCoverageRemainingMs() <= 0) {
+                clearCoverageState('expired');
+                renderOverlay();
+            }
+            return Promise.resolve(null);
+        }
+
+        if (!singleApiKey) return Promise.resolve(null);
+        activeCoverageLastCheckAt = new Date().toISOString();
+        activeCoverageDetectStatus = 'scanning';
+        saveSession();
+
+        return fetchTornScanData(singleApiKey).then(function (data) {
+            if (!data) {
+                activeCoverageDetectStatus = 'scan-failed';
+                saveSession();
+                return null;
+            }
+
+            var found = findOdLikeEvent(data);
+            if (found) {
+                createAutoDetectedClaim(found);
+            } else {
+                activeCoverageDetectStatus = 'clear';
+                saveSession();
+                renderOverlay();
+            }
+            return found;
+        });
+    }
+
+    function ensureCoverageTimer() {
+        if (scanTimer) return;
+        scanTimer = setInterval(function () {
+            if (isCoverageActive()) {
+                runCoverageScan();
+                renderOverlay();
+            } else if (activeCoverageEnabled && currentCoverageRemainingMs() <= 0) {
+                clearCoverageState('expired');
+                renderOverlay();
+            }
+        }, 30000);
     }
 
     function getClaimsDbItems() {
@@ -522,6 +848,15 @@
                 stack: claimStack || '',
                 payout: payoutAmount || '',
                 decision: decisionNote || '',
+                armedAt: activeCoverageArmedAt || '',
+                armedPlan: activeCoveragePlan || '',
+                armedStage: activeCoverageStage || '',
+                armedEnergy: activeCoverageArmedEnergy || '',
+                armedBoosterCd: activeCoverageArmedBoosterCd || '',
+                expiresAt: activeCoverageExpiresAt || '',
+                odDetectedAt: activeCoverageAutoSubmittedAt || '',
+                ruleCheck: activeCoverageRuleCheck || '',
+                detectStatus: activeCoverageDetectStatus || '',
                 updatedAt: new Date().toISOString()
             }
         };
@@ -762,6 +1097,21 @@
 
     function renderOverview() {
         var summary = getMemberClaimSummary();
+        var coverageCard = card('Active Coverage',
+            '<div class="si-row"><span class="si-label">Plan</span><span>' + esc(activeCoveragePlan || 'None') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Stage</span><span>' + esc(activeCoverageStage || '-') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Status</span><span class="si-status">' + esc(isCoverageActive() ? 'Active' : (activeCoverageDetectStatus || 'Idle')) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Armed At</span><span>' + esc(formatDateTime(activeCoverageArmedAt)) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Expires</span><span>' + esc(formatDateTime(activeCoverageExpiresAt)) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Remaining</span><span>' + esc(isCoverageActive() ? formatRemaining(currentCoverageRemainingMs()) : 'Not active') + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Last Check</span><span>' + esc(formatDateTime(activeCoverageLastCheckAt)) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Last Claim</span><span>' + esc(activeCoverageLastClaimId || 'None') + '</span></div>'
+            + '<div class="si-btnrow">'
+            + '<button id="si-scan-now" class="si-btn">Scan Now</button>'
+            + '<button id="si-cancel-coverage" class="si-btn alt">Cancel Window</button>'
+            + '</div>'
+        );
+
         return ''
             + card('Overview',
                 '<div class="si-row"><span class="si-label">User</span><span>' + esc(sessionName) + '</span></div>'
@@ -774,6 +1124,7 @@
                 + '<div class="si-row"><span class="si-label">Paid</span><span>' + esc(summary.paid) + '</span></div>'
                 + '<div class="si-row"><span class="si-label">Backend</span><span>' + esc(backendStatus) + '</span></div>'
                 + '<div class="si-row"><span class="si-label">Last Sync</span><span>' + esc(lastSyncAt) + '</span></div>')
+            + coverageCard
             + renderWarStackControls();
     }
 
@@ -794,14 +1145,26 @@
                     }).join('') + '</div>';
             }
 
+            var activateButtons = '<div class="si-btnrow">'
+                + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
+                + '<button class="si-btn good" data-action="arm-plan" data-plan="' + esc(p.name) + '">Activate</button>'
+                + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
+                + '</div>';
+
+            if (p.stages && p.stages.length) {
+                activateButtons += '<div class="si-wrath-wrap">'
+                    + p.stages.map(function (s) {
+                        return '<div class="si-btnrow">'
+                            + '<button class="si-btn good" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Activate ' + esc(s.stage) + '</button>'
+                            + '</div>';
+                    }).join('') + '</div>';
+            }
+
             return card(p.name,
                 rows
                 + '<div class="si-text">' + esc(p.rule) + '</div>'
                 + wrathStages
-                + '<div class="si-btnrow">'
-                + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
-                + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
-                + '</div>'
+                + activateButtons
             );
         }).join('') + card('Selected Plan', '<div class="si-text"><strong>' + esc(selectedPlan) + '</strong></div>');
     }
@@ -842,6 +1205,8 @@
                 + '<div class="si-field"><label>Proof</label><input id="si-claim-proof" class="si-input" value="' + esc(claimProof) + '" placeholder="Proof or logs"></div>'
                 + '<div class="si-field"><label>Stack Type</label><input id="si-claim-stack" class="si-input" value="' + esc(claimStack) + '" placeholder="Xanax / E-DVD / Mixed"></div>'
                 + '<div class="si-row"><span class="si-label">Status</span><span class="si-status">' + esc(claimStatus) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Auto Window</span><span>' + esc(activeCoveragePlan ? (activeCoveragePlan + (activeCoverageStage ? ' ' + activeCoverageStage : '')) : 'None') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Detect</span><span>' + esc(activeCoverageDetectStatus || 'idle') + '</span></div>'
                 + '<div class="si-btnrow"><button id="si-submit-claim" class="si-btn">Submit Claim</button></div>')
             + (isAdmin() ? card('Admin Review',
                 '<div class="si-field"><label>Payout</label><input id="si-payout" class="si-input" value="' + esc(payoutAmount) + '" placeholder="Payout amount"></div>'
@@ -889,8 +1254,11 @@
             btn.addEventListener('click', function () {
                 var name = btn.getAttribute('data-plan') || '';
                 var action = btn.getAttribute('data-action') || '';
+                var stage = btn.getAttribute('data-stage') || '';
                 if (action === 'select-plan') selectPlan(name);
                 if (action === 'terms-plan') showPlanTerms(name);
+                if (action === 'arm-plan') armPlanCoverage(name, '');
+                if (action === 'arm-stage') armPlanCoverage(name, stage);
             });
         });
 
@@ -926,6 +1294,12 @@
 
         var warOffBtn = overlay.querySelector('#si-war-off');
         if (warOffBtn) warOffBtn.addEventListener('click', function () { setWarState(false); });
+
+        var scanNowBtn = overlay.querySelector('#si-scan-now');
+        if (scanNowBtn) scanNowBtn.addEventListener('click', runCoverageScan);
+
+        var cancelCoverageBtn = overlay.querySelector('#si-cancel-coverage');
+        if (cancelCoverageBtn) cancelCoverageBtn.addEventListener('click', cancelCoverageState);
 
         var logoutBtn = overlay.querySelector('#si-logout');
         if (logoutBtn) logoutBtn.addEventListener('click', logoutSession);
@@ -1076,8 +1450,10 @@
 
     function boot() {
         ensureMounted();
+        ensureCoverageTimer();
         renderOverlay();
         if (syncSecret) fetchWarState();
+        if (isCoverageActive()) runCoverageScan();
         if (!remountTimer) {
             remountTimer = setInterval(function () {
                 if (!document.body) return;
