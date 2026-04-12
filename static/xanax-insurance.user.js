@@ -77,6 +77,11 @@
     var xanaxRequestStatus = gv('si_xr_status', 'idle');
     var xanaxRequestViewerCanRequest = false;
     var xanaxRequestViewerIsAdmin = false;
+    var alertUnreadClaims = Number(gv('si_alert_unread_claims', 0) || 0);
+    var alertPendingActivations = Number(gv('si_alert_pending_activations', 0) || 0);
+    var activationsDb = gv('si_activations_db', '[]');
+    var selectedActivationId = gv('si_selected_activation_id', '');
+    var activationNotice = gv('si_activation_notice', '');
 
     var scanTimer = null;
     var activeCoverageEnabled = !!gv('si_active_coverage_enabled', 0);
@@ -215,6 +220,11 @@
         sv('si_xr_reset_at', xanaxRequestResetAt || '');
         sv('si_xr_reset_by', xanaxRequestResetBy || '');
         sv('si_xr_status', xanaxRequestStatus || 'idle');
+        sv('si_alert_unread_claims', alertUnreadClaims || 0);
+        sv('si_alert_pending_activations', alertPendingActivations || 0);
+        sv('si_activations_db', activationsDb || '[]');
+        sv('si_selected_activation_id', selectedActivationId || '');
+        sv('si_activation_notice', activationNotice || '');
         sv('si_active_coverage_enabled', activeCoverageEnabled ? 1 : 0);
         sv('si_active_coverage_plan', activeCoveragePlan || '');
         sv('si_active_coverage_stage', activeCoverageStage || '');
@@ -415,6 +425,9 @@
             return;
         }
 
+        var payment = getRequiredPaymentForPlan(name, stageName);
+        var paymentNote = window.prompt('Enter payment sent note / proof for ' + name + (stageName ? ' ' + stageName : '') + '\nRequired: ' + payment.qty + ' ' + payment.item, '') || '';
+
         var now = new Date();
         var mins = getPlanWindowMinutes(name, stageName);
         var expiry = new Date(now.getTime() + (mins * 60000));
@@ -425,7 +438,7 @@
         activeCoverageStage = stageName || '';
         activeCoverageArmedAt = now.toISOString();
         activeCoverageExpiresAt = expiry.toISOString();
-        activeCoverageDetectStatus = 'armed';
+        activeCoverageDetectStatus = 'armed-pending-verification';
         activeCoverageLastCheckAt = '';
         activeCoverageLastEventKey = '';
         activeCoverageLastClaimId = '';
@@ -433,9 +446,35 @@
         activeCoverageArmedEnergy = '';
         activeCoverageArmedBoosterCd = '';
         activeCoverageRuleCheck = getPlanRuleForActivation(name, stageName);
+
+        var activationId = makeActivationId();
+        activationNotice = 'Activation requested. Waiting for admin payment verification.';
+        upsertActivationLocal({
+            id: activationId,
+            member: sessionName || 'Member',
+            memberId: '',
+            plan: name,
+            stage: stageName || '',
+            status: 'Pending verification',
+            requiredPaymentItem: payment.item,
+            requiredPaymentQty: payment.qty,
+            paymentNote: paymentNote,
+            memberPaymentVerified: 0,
+            adminReceiptVerified: 0,
+            reviewedBy: '',
+            reviewNote: '',
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString()
+        });
         saveSession();
         renderOverlay();
-        window.alert(name + (stageName ? ' ' + stageName : '') + ' activated for ' + mins + ' minutes.');
+        pushActivation('member_request', {
+            id: activationId,
+            plan: name,
+            stage: stageName || '',
+            paymentNote: paymentNote
+        });
+        window.alert(name + (stageName ? ' ' + stageName : '') + ' armed for ' + mins + ' minutes. Verification request sent to admin.');
         runCoverageScan();
     }
 
@@ -644,6 +683,85 @@
     function saveHistory(items) {
         claimHistory = JSON.stringify(Array.isArray(items) ? items : []);
         saveSession();
+    }
+
+
+    function getActivationsDbItems() {
+        try {
+            var arr = JSON.parse(activationsDb || '[]');
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveActivationsDbItems(arr) {
+        activationsDb = JSON.stringify(Array.isArray(arr) ? arr : []);
+        saveSession();
+    }
+
+    function makeActivationId() {
+        return 'ACT-' + String(Date.now()).slice(-8);
+    }
+
+    function getRequiredPaymentForPlan(name, stageName) {
+        var plan = String(name || '').toLowerCase();
+        if (plan === 'pride') return { item: 'Xanax', qty: '2' };
+        if (plan === 'envy') return { item: 'Xanax', qty: '5' };
+        if (plan === 'wrath') return { item: 'Xanax', qty: '2' };
+        if (plan === 'greed') return { item: 'Xanax', qty: '1' };
+        return { item: 'Xanax', qty: '0' };
+    }
+
+    function upsertActivationLocal(rec) {
+        var items = getActivationsDbItems();
+        var idx = items.findIndex(function (x) { return x && x.id === rec.id; });
+        if (idx >= 0) items[idx] = rec; else items.unshift(rec);
+        selectedActivationId = rec.id || selectedActivationId;
+        saveActivationsDbItems(items.slice(0, 100));
+    }
+
+    function fetchAlertsState() {
+        if (!syncSecret) return Promise.resolve(null);
+        return apiRequest('POST', '/api/alerts/state', { secret: syncSecret, auth: buildServerAuthPayload() }).then(function (data) {
+            var st = data && data.state;
+            if (st) {
+                alertUnreadClaims = Number(st.unreadClaims || 0);
+                alertPendingActivations = Number(st.pendingActivations || 0);
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () { return null; });
+    }
+
+    function fetchActivations() {
+        if (!syncSecret) return Promise.resolve(null);
+        return apiRequest('POST', '/api/activations/pull', { secret: syncSecret, auth: buildServerAuthPayload() }).then(function (data) {
+            if (data && Array.isArray(data.activations)) {
+                saveActivationsDbItems(data.activations);
+                if (!selectedActivationId && data.activations.length) selectedActivationId = data.activations[0].id || '';
+                fetchAlertsState();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () { return null; });
+    }
+
+    function pushActivation(action, activation) {
+        return apiRequest('POST', '/api/activations/push', {
+            secret: syncSecret,
+            action: action,
+            auth: buildServerAuthPayload(),
+            activation: activation || {}
+        }).then(function (data) {
+            if (data && data.activation) {
+                upsertActivationLocal(data.activation);
+                fetchAlertsState();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () { return null; });
     }
 
     function addHistory(text) {
@@ -1058,6 +1176,8 @@
                 fetchWarTabState();
                 fetchFinancialSummary();
                 fetchXanaxRequestState();
+                fetchAlertsState();
+                fetchActivations();
                 syncClaimsFromBackend();
                 return;
             }
@@ -1343,7 +1463,13 @@
             + '<div class="si-row"><span class="si-label">Admin Payouts Verified</span><span>' + esc(finPayoutCount) + '</span></div>'
         );
 
-        return financeCard + renderWarStackControls();
+        var alertsCard = card('Admin Alerts',
+            '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
+            + '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
+            + '<div class="si-text">Admin alerts update from the backend after login and refresh when tabs open.</div>'
+        );
+
+        return financeCard + (isAdmin() ? alertsCard : '') + renderWarStackControls();
     }
 
     function renderPlans() {
@@ -1375,6 +1501,40 @@
                 + activateButtons
             );
         }).join('') + card('Selected Plan', '<div class="si-text"><strong>' + esc(selectedPlan) + '</strong></div>');
+    }
+
+    function renderActivations() {
+        var items = getActivationsDbItems();
+        var options = items.map(function (item) {
+            return '<option value="' + esc(item.id) + '"' + (selectedActivationId === item.id ? ' selected' : '') + '>' + esc((item.id || '') + ' | ' + (item.plan || '') + ' ' + (item.stage || '') + ' | ' + (item.status || '')) + '</option>';
+        }).join('');
+        var rec = items.find(function (x) { return x && x.id === selectedActivationId; }) || items[0] || null;
+        var adminControls = '';
+        if (isAdmin() && rec) {
+            adminControls = '<div class="si-btnstack">'
+                + '<button id="si-act-verify-payment" class="si-btn">Verify Payment</button>'
+                + '<button id="si-act-verify-receipt" class="si-btn good">Verify Receipt / Activate</button>'
+                + '<button id="si-act-reject" class="si-btn bad">Reject</button>'
+                + '</div>'
+                + '<div class="si-field"><label>Admin Note</label><textarea id="si-activation-admin-note" class="si-textarea" placeholder="Review note">' + esc(rec.reviewNote || '') + '</textarea></div>';
+        }
+        return ''
+            + card('Activation Alerts',
+                '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
+                + '<div class="si-text">' + esc(activationNotice || 'Activation requests appear here for verification.') + '</div>'
+                + '<div class="si-btnrow"><button id="si-refresh-activations" class="si-btn alt">Refresh</button></div>')
+            + card('Plan Activations',
+                '<div class="si-field"><label>Saved Activations</label><select id="si-activation-select" class="si-input"><option value="">Select activation</option>' + options + '</select></div>'
+                + (rec ? '<div class="si-row"><span class="si-label">Member</span><span>' + esc(rec.member || '') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Plan</span><span>' + esc((rec.plan || '') + ' ' + (rec.stage || '')) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Required Payment</span><span>' + esc((rec.requiredPaymentQty || '0') + ' ' + (rec.requiredPaymentItem || '')) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payment Note</span><span>' + esc(rec.paymentNote || '') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Status</span><span>' + esc(rec.status || '') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Member Payment Verified</span><span>' + esc(rec.memberPaymentVerified ? 'Yes' : 'No') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Receipt Verified</span><span>' + esc(rec.adminReceiptVerified ? 'Yes' : 'No') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Reviewed By</span><span>' + esc(rec.reviewedBy || '') + '</span></div>'
+                + adminControls : '<div class="si-text">No activation requests yet.</div>'));
     }
 
     function renderClaims() {
@@ -1483,6 +1643,7 @@
                     fetchWarTabState();
                 }
                 if (activeTab === 'xanax_request') fetchXanaxRequestState();
+                if (activeTab === 'activations') fetchActivations();
                 if (activeTab === 'claims') fetchSelectedClaimHistory();
             });
         });
@@ -1557,6 +1718,37 @@
         var xrResetBtn = overlay.querySelector('#si-xr-reset');
         if (xrResetBtn) xrResetBtn.addEventListener('click', resetXanaxCutTotal);
 
+        var refreshActivationsBtn = overlay.querySelector('#si-refresh-activations');
+        if (refreshActivationsBtn) refreshActivationsBtn.addEventListener('click', fetchActivations);
+
+        var activationSelect = overlay.querySelector('#si-activation-select');
+        if (activationSelect) activationSelect.addEventListener('change', function () {
+            selectedActivationId = activationSelect.value || '';
+            saveSession();
+            renderOverlay();
+        });
+
+        var actVerifyPaymentBtn = overlay.querySelector('#si-act-verify-payment');
+        if (actVerifyPaymentBtn) actVerifyPaymentBtn.addEventListener('click', function () {
+            var note = valueOf('#si-activation-admin-note') || '';
+            if (!selectedActivationId) return;
+            pushActivation('admin_verify_payment', { id: selectedActivationId, reviewNote: note });
+        });
+
+        var actVerifyReceiptBtn = overlay.querySelector('#si-act-verify-receipt');
+        if (actVerifyReceiptBtn) actVerifyReceiptBtn.addEventListener('click', function () {
+            var note = valueOf('#si-activation-admin-note') || '';
+            if (!selectedActivationId) return;
+            pushActivation('admin_verify_receipt', { id: selectedActivationId, reviewNote: note });
+        });
+
+        var actRejectBtn = overlay.querySelector('#si-act-reject');
+        if (actRejectBtn) actRejectBtn.addEventListener('click', function () {
+            var note = valueOf('#si-activation-admin-note') || '';
+            if (!selectedActivationId) return;
+            pushActivation('admin_reject', { id: selectedActivationId, reviewNote: note });
+        });
+
         var logoutBtn = overlay.querySelector('#si-logout');
         if (logoutBtn) logoutBtn.addEventListener('click', logoutSession);
 
@@ -1603,6 +1795,7 @@
         var body = renderOverview();
         if (activeTab === 'plans') body = renderPlans();
         if (activeTab === 'claims') body = renderClaims();
+        if (activeTab === 'activations') body = renderActivations();
         if (activeTab === 'xanax_request') body = renderXanaxRequest();
         if (activeTab === 'war_stack') body = renderWarStackTab();
         if (activeTab === 'settings') body = renderSettings();
@@ -1615,7 +1808,8 @@
             + '<div class="si-tabs">'
             + '<button class="si-tab ' + (activeTab === 'overview' ? 'active' : '') + '" data-tab="overview">Overview</button>'
             + '<button class="si-tab ' + (activeTab === 'plans' ? 'active' : '') + '" data-tab="plans">Plans</button>'
-            + '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims</button>'
+            + '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims' + (alertUnreadClaims ? ' (' + alertUnreadClaims + ')' : '') + '</button>'
+            + '<button class="si-tab ' + (activeTab === 'activations' ? 'active' : '') + '" data-tab="activations">Activations' + (alertPendingActivations ? ' (' + alertPendingActivations + ')' : '') + '</button>'
             + (warTabEnabled ? '<button class=\"si-tab ' + (activeTab === 'war_stack' ? 'active' : '') + '\" data-tab=\"war_stack\">War Stack</button>' : '')
             + '<button class="si-tab ' + (activeTab === 'xanax_request' ? 'active' : '') + '" data-tab="xanax_request">Xanax Request</button>'
             + '<button class="si-tab ' + (activeTab === 'settings' ? 'active' : '') + '" data-tab="settings">Settings</button>'
@@ -1712,6 +1906,8 @@
         ensureMounted();
         ensureCoverageTimer();
         fetchXanaxRequestState();
+        fetchAlertsState();
+        fetchActivations();
         renderOverlay();
         if (syncSecret) {
             fetchWarTabState();
