@@ -1032,11 +1032,21 @@
                     fetchFinancialSummary();
                     syncClaimsFromBackend();
                 } else {
-                    window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
+                    var raw = (memberData && memberData.error) ? String(memberData.error) : 'Login failed.';
+                    var lower = raw.toLowerCase();
+                    var msg = raw;
+                    if (lower.indexOf('wrong faction') >= 0) {
+                        msg = 'This API key is not in the allowed faction.';
+                    } else if (lower.indexOf('member api key not recognized') >= 0 || lower.indexOf('member login failed') >= 0) {
+                        msg = 'Torn API key not recognized. Check that the key is valid and has access for this account.';
+                    } else if (lower.indexOf('unauthorized') >= 0) {
+                        msg = 'Login blocked by backend settings.';
+                    }
+                    window.alert(msg);
                 }
             });
         }).catch(function () {
-            window.alert('Login failed.');
+            window.alert('Login failed. Check your Torn API key and try again.');
         });
     }
 
@@ -1216,7 +1226,6 @@
 
             var activateButtons = '<div class="si-btnrow">'
                 + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
-                + '<button class="si-btn good" data-action="arm-plan" data-plan="' + esc(p.name) + '">Activate</button>'
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>';
 
