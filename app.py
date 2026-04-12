@@ -249,12 +249,12 @@ def verify_any_logged_in_user(auth: dict[str, Any]):
 def user_can_manage_warstack(user: dict[str, Any]) -> bool:
     role = normalize_text(user.get("role")).lower()
     player_id = normalize_text(user.get("player_id"))
-    return role in {"admin", "leader", "co-leader"} or player_id in WARSTACK_MANAGER_IDS
+    return role in {"admin", "leader"} or player_id in WARSTACK_MANAGER_IDS
 
 
 def user_can_request_xanax(user: dict[str, Any]) -> bool:
     role = normalize_text(user.get("role")).lower()
-    return role in {"admin", "leader", "co-leader"}
+    return role in {"admin", "leader"}
 
 
 def build_war_tab_state(user: dict[str, Any]) -> dict[str, Any]:
