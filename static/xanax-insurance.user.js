@@ -253,16 +253,17 @@
     function getGreedPlanData() {
         return {
             name: 'Greed',
-            coverage: 'Faction war stack coverage',
-            payment: 'Uses active faction cut flow',
-            window: 'While War Stack is active',
+            coverage: '2 Feathery Hotel Coupon',
+            payment: '1 Xanax',
+            window: '30 mins',
             payout: 'Admin review',
             terms: [
                 'Greed Terms:',
-                'Only available when War Stack is activated.',
-                'Used from the War Stack tab.',
-                'Faction cut requests are handled in Xanax Request.',
-                'Admin review still applies to claims and payouts.'
+                'Any energy.',
+                'Payment: 1 Xanax.',
+                'Coverage: 2 Feathery Hotel Coupon.',
+                'Window: 30 mins.',
+                'Only available when War Stack is activated.'
             ].join('\n')
         };
     }
