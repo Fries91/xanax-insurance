@@ -1554,56 +1554,25 @@
                             + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(s.payment) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Terms</span><span>' + esc(s.terms) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(s.window) + '</span></div>'
-                            + '<div class="si-btnrow"><button class="si-btn good" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Activate ' + esc(s.stage) + '</button></div>'
-                            + '</div>';
-                    }).join('') + '</div>';
+                            + '<div class="si-btnrow">'
+                                + '<button class="si-btn" data-action="select-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Select ' + esc(s.stage) + '</button>'
+                                + '<button class="si-btn good" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Activate ' + esc(s.stage) + '</button>'
+                            + '</div>'
+                        + '</div>';
+                    }).join('')
+                    + '</div>';
             }
 
-            var activateButtons = '<div class="si-btnrow">'
+            var buttonRow = '<div class="si-btnrow">'
                 + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
+                + ((p.name === 'Pride' || p.name === 'Envy')
+                    ? '<button class="si-btn good" data-action="arm-plan" data-plan="' + esc(p.name) + '">Activate</button>'
+                    : '')
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>';
 
-            return card(p.name,
-                rows
-                + wrathStages
-                + activateButtons
-            );
-        }).join('') + card('Selected Plan', '<div class="si-text"><strong>' + esc(selectedPlan) + '</strong></div>');
-    }
-
-    function renderActivations() {
-        var items = getActivationsDbItems();
-        var options = items.map(function (item) {
-            return '<option value="' + esc(item.id) + '"' + (selectedActivationId === item.id ? ' selected' : '') + '>' + esc((item.id || '') + ' | ' + (item.plan || '') + ' ' + (item.stage || '') + ' | ' + (item.status || '')) + '</option>';
+            return card(p.name, rows + wrathStages + buttonRow);
         }).join('');
-        var rec = items.find(function (x) { return x && x.id === selectedActivationId; }) || items[0] || null;
-        var adminControls = '';
-        if (isAdmin() && rec) {
-            adminControls = '<div class="si-btnstack">'
-                + '<button id="si-act-verify-payment" class="si-btn">Verify Payment</button>'
-                + '<button id="si-act-verify-receipt" class="si-btn good">Verify Receipt / Activate</button>'
-                + '<button id="si-act-reject" class="si-btn bad">Reject</button>'
-                + '</div>'
-                + '<div class="si-field"><label>Admin Note</label><textarea id="si-activation-admin-note" class="si-textarea" placeholder="Review note">' + esc(rec.reviewNote || '') + '</textarea></div>';
-        }
-        return ''
-            + card('Activation Alerts',
-                '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
-                + '<div class="si-text">' + esc(activationNotice || 'Activation requests appear here for verification.') + '</div>'
-                + '<div class="si-btnrow"><button id="si-refresh-activations" class="si-btn alt">Refresh</button></div>')
-            + card('Plan Activations',
-                '<div class="si-field"><label>Saved Activations</label><select id="si-activation-select" class="si-input"><option value="">Select activation</option>' + options + '</select></div>'
-                + (rec ? '<div class="si-row"><span class="si-label">Member</span><span>' + esc(rec.member || '') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Plan</span><span>' + esc((rec.plan || '') + ' ' + (rec.stage || '')) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Required Payment</span><span>' + esc((rec.requiredPaymentQty || '0') + ' ' + (rec.requiredPaymentItem || '')) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Payment Note</span><span>' + esc(rec.paymentNote || '') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Status</span><span>' + esc(rec.status || '') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Member Payment Verified</span><span>' + esc(rec.memberPaymentVerified ? 'Yes' : 'No') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Receipt Verified</span><span>' + esc(rec.adminReceiptVerified ? 'Yes' : 'No') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Reviewed By</span><span>' + esc(rec.reviewedBy || '') + '</span></div>'
-                + adminControls : '<div class="si-text">No activation requests yet.</div>'));
     }
 
     function renderClaims() {
