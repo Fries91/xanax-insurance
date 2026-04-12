@@ -92,6 +92,31 @@ class ClaimsStore(BaseStore):
                 """
             )
 
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS activation_requests (
+                    id TEXT PRIMARY KEY,
+                    member TEXT NOT NULL DEFAULT '',
+                    memberId TEXT NOT NULL DEFAULT '',
+                    plan TEXT NOT NULL DEFAULT '',
+                    stage TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT '',
+                    requiredPaymentItem TEXT NOT NULL DEFAULT '',
+                    requiredPaymentQty TEXT NOT NULL DEFAULT '',
+                    paymentNote TEXT NOT NULL DEFAULT '',
+                    memberPaymentVerified INTEGER NOT NULL DEFAULT 0,
+                    memberPaymentVerifiedAt TEXT NOT NULL DEFAULT '',
+                    adminReceiptVerified INTEGER NOT NULL DEFAULT 0,
+                    adminReceiptVerifiedAt TEXT NOT NULL DEFAULT '',
+                    reviewedBy TEXT NOT NULL DEFAULT '',
+                    reviewNote TEXT NOT NULL DEFAULT '',
+                    createdAt TEXT NOT NULL DEFAULT '',
+                    updatedAt TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS app_settings (
@@ -110,6 +135,8 @@ class ClaimsStore(BaseStore):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_updated_at ON claims(updatedAt)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_claim_id ON claim_history(claimId)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_at ON claim_history(at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member_id ON activation_requests(memberId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_status ON activation_requests(status)")
             conn.commit()
 
             needed = {
@@ -507,6 +534,95 @@ class ClaimsStore(BaseStore):
         self.set_setting("xanax_request_reset_by_id", str(reset_by_id or ""), updated_by=reset_by, updated_by_id=reset_by_id)
 
 
+
+
+    def upsert_activation(self, activation: dict[str, Any]) -> None:
+        payload = {
+            "id": str(activation.get("id", "")),
+            "member": str(activation.get("member", "")),
+            "memberId": str(activation.get("memberId", "")),
+            "plan": str(activation.get("plan", "")),
+            "stage": str(activation.get("stage", "")),
+            "status": str(activation.get("status", "")),
+            "requiredPaymentItem": str(activation.get("requiredPaymentItem", "")),
+            "requiredPaymentQty": str(activation.get("requiredPaymentQty", "")),
+            "paymentNote": str(activation.get("paymentNote", "")),
+            "memberPaymentVerified": int(activation.get("memberPaymentVerified", 0) or 0),
+            "memberPaymentVerifiedAt": str(activation.get("memberPaymentVerifiedAt", "")),
+            "adminReceiptVerified": int(activation.get("adminReceiptVerified", 0) or 0),
+            "adminReceiptVerifiedAt": str(activation.get("adminReceiptVerifiedAt", "")),
+            "reviewedBy": str(activation.get("reviewedBy", "")),
+            "reviewNote": str(activation.get("reviewNote", "")),
+            "createdAt": str(activation.get("createdAt", "")) or now_iso(),
+            "updatedAt": str(activation.get("updatedAt", "")) or now_iso(),
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO activation_requests (
+                    id, member, memberId, plan, stage, status,
+                    requiredPaymentItem, requiredPaymentQty, paymentNote,
+                    memberPaymentVerified, memberPaymentVerifiedAt,
+                    adminReceiptVerified, adminReceiptVerifiedAt,
+                    reviewedBy, reviewNote, createdAt, updatedAt
+                )
+                VALUES (
+                    :id, :member, :memberId, :plan, :stage, :status,
+                    :requiredPaymentItem, :requiredPaymentQty, :paymentNote,
+                    :memberPaymentVerified, :memberPaymentVerifiedAt,
+                    :adminReceiptVerified, :adminReceiptVerifiedAt,
+                    :reviewedBy, :reviewNote, :createdAt, :updatedAt
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    member=excluded.member,
+                    memberId=excluded.memberId,
+                    plan=excluded.plan,
+                    stage=excluded.stage,
+                    status=excluded.status,
+                    requiredPaymentItem=excluded.requiredPaymentItem,
+                    requiredPaymentQty=excluded.requiredPaymentQty,
+                    paymentNote=excluded.paymentNote,
+                    memberPaymentVerified=excluded.memberPaymentVerified,
+                    memberPaymentVerifiedAt=excluded.memberPaymentVerifiedAt,
+                    adminReceiptVerified=excluded.adminReceiptVerified,
+                    adminReceiptVerifiedAt=excluded.adminReceiptVerifiedAt,
+                    reviewedBy=excluded.reviewedBy,
+                    reviewNote=excluded.reviewNote,
+                    createdAt=COALESCE(NULLIF(activation_requests.createdAt, ''), excluded.createdAt),
+                    updatedAt=excluded.updatedAt
+                """,
+                payload,
+            )
+            conn.commit()
+
+    def get_activation(self, activation_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM activation_requests WHERE id = ?", (activation_id,)).fetchone()
+            return dict(row) if row else None
+
+    def list_activations(self, member_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM activation_requests WHERE 1=1"
+        params: list[Any] = []
+        if member_id:
+            query += " AND memberId = ?"
+            params.append(member_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY updatedAt DESC, rowid DESC"
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_alert_counts(self) -> dict[str, int]:
+        with self._connect() as conn:
+            unread_claims = conn.execute("SELECT COUNT(*) AS c FROM claims WHERE isRead = 0").fetchone()["c"]
+            pending_activations = conn.execute("SELECT COUNT(*) AS c FROM activation_requests WHERE status IN ('Pending verification','Pending receipt','Awaiting review')").fetchone()["c"]
+            return {
+                "unreadClaims": int(unread_claims or 0),
+                "pendingActivations": int(pending_activations or 0),
+            }
+
 class ClaimHistoryStore(BaseStore):
     def __init__(self, db_path: str) -> None:
         super().__init__(db_path)
@@ -526,6 +642,8 @@ class ClaimHistoryStore(BaseStore):
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_claim_id ON claim_history(claimId)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_at ON claim_history(at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member_id ON activation_requests(memberId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_status ON activation_requests(status)")
             conn.commit()
 
     def add_entry(self, claim_id: str, text: str) -> None:
