@@ -168,8 +168,8 @@ def user_can_manage_warstack(user: dict[str, Any]) -> bool:
     return role in {"admin", "leader", "co-leader"} or player_id in WARSTACK_MANAGER_IDS
 
 
-def build_warstack_state(user: dict[str, Any]) -> dict[str, Any]:
-    state = claims.get_warstack_state()
+def build_war_tab_state(user: dict[str, Any]) -> dict[str, Any]:
+    state = claims.get_war_tab_state()
     state["viewerCanManage"] = user_can_manage_warstack(user)
     state["viewerRole"] = normalize_text(user.get("role"))
     state["viewerName"] = normalize_text(user.get("name"))
@@ -275,8 +275,8 @@ def warstack_state():
     user, err = verify_any_logged_in_user(auth)
     if not user:
         return json_error(err or "auth failed", 403)
-    state = build_warstack_state(user)
-    return jsonify({"ok": True, "state": state, "warstack": state})
+    state = build_war_tab_state(user)
+    return jsonify({"ok": True, "state": state, "war_tab": state})
 
 
 @app.route("/api/warstack/set-state", methods=["POST", "OPTIONS"])
@@ -290,16 +290,15 @@ def warstack_set_state():
     user, err = verify_any_logged_in_user(auth)
     if not user:
         return json_error(err or "auth failed", 403)
-    if not user_can_manage_warstack(user):
-        return json_error("only leaders, co-leaders, admin, or configured managers may change this state", 403)
-    claims.set_warstack_state(
+    if not user_can_manage_war_tab(user):
+        return json_error("only admin, leader, co-leader, or configured managers may activate or deactivate the war tab", 403)
+    claims.set_war_tab_state(
         enabled=normalize_bool(payload.get("enabled")),
         updated_by=normalize_text(user.get("name")),
         updated_by_id=normalize_text(user.get("player_id")),
     )
-    state = build_warstack_state(user)
-    return jsonify({"ok": True, "state": state, "warstack": state})
-
+    state = build_war_tab_state(user)
+    return jsonify({"ok": True, "state": state, "war_tab": state})
 
 @app.route("/api/claims/history", methods=["POST", "OPTIONS"])
 def claim_history():
