@@ -252,9 +252,23 @@ def user_can_manage_warstack(user: dict[str, Any]) -> bool:
     return role in {"admin", "leader", "co-leader"} or player_id in WARSTACK_MANAGER_IDS
 
 
+def user_can_request_xanax(user: dict[str, Any]) -> bool:
+    role = normalize_text(user.get("role")).lower()
+    return role in {"admin", "leader", "co-leader"}
+
+
 def build_war_tab_state(user: dict[str, Any]) -> dict[str, Any]:
     state = claims.get_war_tab_state()
     state["viewerCanManage"] = user_can_manage_warstack(user)
+    state["viewerRole"] = normalize_text(user.get("role"))
+    state["viewerName"] = normalize_text(user.get("name"))
+    return state
+
+
+def build_xanax_request_state(user: dict[str, Any]) -> dict[str, Any]:
+    state = claims.get_xanax_request_state()
+    state["viewerCanRequest"] = user_can_request_xanax(user)
+    state["viewerIsAdmin"] = normalize_text(user.get("role")).lower() == "admin"
     state["viewerRole"] = normalize_text(user.get("role"))
     state["viewerName"] = normalize_text(user.get("name"))
     return state
@@ -383,6 +397,83 @@ def warstack_set_state():
     )
     state = build_war_tab_state(user)
     return jsonify({"ok": True, "state": state, "war_tab": state})
+
+@app.route("/api/xanax-request/state", methods=["POST", "OPTIONS"])
+def xanax_request_state():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    state = build_xanax_request_state(user)
+    return jsonify({"ok": True, "state": state})
+
+@app.route("/api/xanax-request/request", methods=["POST", "OPTIONS"])
+def xanax_request_request():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    if not user_can_request_xanax(user):
+        return json_error("only admin, leader, or co-leader may request the faction cut", 403)
+    summary = claims.get_financial_summary()
+    total_owed = float(summary.get("faction_cut_xanax", 0) or 0)
+    claims.request_xanax_cut(
+        total_owed=total_owed,
+        requested_by=normalize_text(user.get("name")),
+        requested_by_id=normalize_text(user.get("player_id")),
+    )
+    state = build_xanax_request_state(user)
+    return jsonify({"ok": True, "state": state})
+
+@app.route("/api/xanax-request/mark-sent", methods=["POST", "OPTIONS"])
+def xanax_request_mark_sent():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    if normalize_text(user.get("role")).lower() != "admin":
+        return json_error("only admin may mark the faction cut as sent", 403)
+    claims.mark_xanax_cut_sent(
+        sent_by=normalize_text(user.get("name")),
+        sent_by_id=normalize_text(user.get("player_id")),
+    )
+    state = build_xanax_request_state(user)
+    return jsonify({"ok": True, "state": state})
+
+@app.route("/api/xanax-request/reset", methods=["POST", "OPTIONS"])
+def xanax_request_reset():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    if normalize_text(user.get("role")).lower() != "admin":
+        return json_error("only admin may reset the faction cut total", 403)
+    claims.reset_xanax_cut(
+        reset_by=normalize_text(user.get("name")),
+        reset_by_id=normalize_text(user.get("player_id")),
+    )
+    state = build_xanax_request_state(user)
+    return jsonify({"ok": True, "state": state})
 
 @app.route("/api/claims/history", methods=["POST", "OPTIONS"])
 def claim_history():
