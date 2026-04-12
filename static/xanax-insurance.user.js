@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      4.0.1
+// @version      4.0.2
 // @description  Sinner's Insurance
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -86,28 +86,28 @@
             name: 'Pride',
             coverage: '6 Xanax',
             payment: '2 Xanax',
-            window: '20 mins',
+            window: '30 mins',
             payout: 'Up to 6 Xanax',
             stackType: 'any',
             rule: 'Can start with any amount of energy.',
             oldRows: [
                 ['Coverage', '6 Xanax'],
                 ['Payment', '2 Xanax'],
-                ['Window', '20 mins'],
+                ['Window', '30 mins'],
                 ['Payout', 'Up to 6 Xanax']
             ]
         },
         {
             name: 'Envy',
             coverage: '25 Xanax + 3 E-DVD',
-            payment: '2 Xanax + admin approval',
+            payment: '5 Xanax',
             window: '30 mins',
             payout: 'Plan review',
             stackType: 'mixed',
             rule: 'Use for approved Envy claims only.',
             oldRows: [
                 ['Coverage', '25 Xanax + 3 E-DVD'],
-                ['Payment', '2 Xanax'],
+                ['Payment', '5 Xanax'],
                 ['Window', '30 mins'],
                 ['Payout', 'Plan review']
             ]
@@ -115,25 +115,26 @@
         {
             name: 'Wrath',
             coverage: 'Stage based',
-            payment: '5 / 10 / 15 / 20 Xanax',
-            window: '1 hour each stage',
-            payout: '250 / 500 / 750 / 1000',
+            payment: '2 Xanax each stage',
+            window: '30 mins each stage',
+            payout: '5 / 10 / 15 / 20 Xanax',
             stackType: 'xanax',
-            rule: 'Must start at 0 energy so OD log shows the correct loss stage.',
+            rule: 'Each stage has a required starting energy amount and must be armed on the matching stage.',
             stages: [
-                { stage: 'Stage 1', coverage: '2', payment: '5 Xanax', payout: '250', window: '1 hour' },
-                { stage: 'Stage 2', coverage: '2', payment: '10 Xanax', payout: '500', window: '1 hour' },
-                { stage: 'Stage 3', coverage: '2', payment: '15 Xanax', payout: '750', window: '1 hour' },
-                { stage: 'Stage 4', coverage: '2', payment: '20 Xanax', payout: '1000', window: '1 hour' }
+                { stage: 'Stage 1', coverage: '2 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
+                { stage: 'Stage 2', coverage: '2 Xanax', payment: '2 Xanax', payout: '10 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
+                { stage: 'Stage 3', coverage: '2 Xanax', payment: '2 Xanax', payout: '15 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
+                { stage: 'Stage 4', coverage: '2 Xanax', payment: '2 Xanax', payout: '20 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
                 ['Coverage', 'Stage based'],
-                ['Payment', '5 / 10 / 15 / 20 Xanax'],
-                ['Window', '1 hour each stage'],
-                ['Payout', '250 / 500 / 750 / 1000']
+                ['Payment', '2 Xanax each stage'],
+                ['Window', '30 mins each stage'],
+                ['Payout', '5 / 10 / 15 / 20 Xanax']
             ]
         }
     ];
+
 
     function gv(key, fallback) {
         try {
@@ -227,6 +228,41 @@
         return p ? p.rule : 'No plan selected.';
     }
 
+    function getDetailedPlanTerms(name) {
+        var p = getPlanByName(name);
+        if (!p) return 'No plan selected.';
+        if (name === 'Wrath' && p.stages && p.stages.length) {
+            return [
+                'Wrath Terms:',
+                'Window: 30 mins for every stage.',
+                'Payment: 2 Xanax per stage.',
+                'Stage 1 payout: 5 Xanax | Terms: Start at 0 energy.',
+                'Stage 2 payout: 10 Xanax | Terms: Start at 250 energy.',
+                'Stage 3 payout: 15 Xanax | Terms: Start at 500 energy.',
+                'Stage 4 payout: 20 Xanax | Terms: Start at 750 energy.'
+            ].join('\n');
+        }
+        if (name === 'Envy') {
+            return [
+                'Envy Terms:',
+                'Coverage: 25 Xanax + 3 E-DVD.',
+                'Payment: 5 Xanax.',
+                'Window: 30 mins.',
+                p.rule
+            ].join('\n');
+        }
+        if (name === 'Pride') {
+            return [
+                'Pride Terms:',
+                'Coverage: 6 Xanax.',
+                'Payment: 2 Xanax.',
+                'Window: 30 mins.',
+                p.rule
+            ].join('\n');
+        }
+        return p.rule;
+    }
+
     function getPayoutGuide(name) {
         var p = getPlanByName(name);
         return p ? p.payout : 'Admin review';
@@ -277,11 +313,6 @@
     }
 
     function getPlanWindowMinutes(name, stageName) {
-        if (name === 'Wrath') {
-            return 60;
-        }
-        if (name === 'Envy') return 30;
-        if (name === 'Pride') return 20;
         return 30;
     }
 
@@ -298,7 +329,12 @@
 
     function getPlanRuleForActivation(name, stageName) {
         if (name === 'Wrath') {
-            return 'Wrath active' + (stageName ? ' - ' + stageName : '') + '. Must start at 0 energy.';
+            var p = getPlanByName(name);
+            if (p && p.stages) {
+                var s = p.stages.find(function (x) { return x.stage === stageName; }) || p.stages[0];
+                if (s) return 'Wrath active - ' + s.stage + '. ' + s.terms + '.';
+            }
+            return 'Wrath active.';
         }
         return getPlanRuleText(name);
     }
@@ -1041,7 +1077,7 @@
     }
 
     function showPlanTerms(name) {
-        window.alert(name + ' terms:\n\n' + getPlanRuleText(name));
+        window.alert(getDetailedPlanTerms(name));
     }
 
     function valueOf(selector) {
@@ -1171,8 +1207,9 @@
                             + '<div class="si-wrath-title">' + esc(s.stage) + '</div>'
                             + '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(s.coverage) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(s.payment) + '</span></div>'
-                            + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(s.payout) + '</span></div>'
+                            + '<div class="si-row"><span class="si-label">Terms</span><span>' + esc(s.terms) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(s.window) + '</span></div>'
+                            + '<div class="si-btnrow"><button class="si-btn good" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Activate ' + esc(s.stage) + '</button></div>'
                             + '</div>';
                     }).join('') + '</div>';
             }
@@ -1183,18 +1220,8 @@
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>';
 
-            if (p.stages && p.stages.length) {
-                activateButtons += '<div class="si-wrath-wrap">'
-                    + p.stages.map(function (s) {
-                        return '<div class="si-btnrow">'
-                            + '<button class="si-btn good" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Activate ' + esc(s.stage) + '</button>'
-                            + '</div>';
-                    }).join('') + '</div>';
-            }
-
             return card(p.name,
                 rows
-                + '<div class="si-text">' + esc(p.rule) + '</div>'
                 + wrathStages
                 + activateButtons
             );
