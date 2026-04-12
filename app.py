@@ -86,19 +86,45 @@ def parse_torn_key_info(data: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def torn_lookup_user(api_key: str) -> dict[str, Any] | None:
+def torn_lookup_user(api_key: str) -> tuple[dict[str, Any] | None, str | None]:
     if not api_key:
-        return None
+        return None, "missing api key"
     url = f"{TORN_API_BASE}/v2/key/info"
     try:
         resp = requests.get(url, headers={"Authorization": f"ApiKey {api_key}"}, timeout=REQUEST_TIMEOUT)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
+    except requests.Timeout:
+        return None, "torn lookup timed out"
+    except requests.RequestException:
+        return None, "torn lookup failed"
 
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if resp.status_code != 200:
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                msg = normalize_text(err.get("error") or err.get("message"))
+                if msg:
+                    return None, msg
+            msg = normalize_text(data.get("error") or data.get("message"))
+            if msg:
+                return None, msg
+        return None, f"torn lookup failed ({resp.status_code})"
+
+    if not isinstance(data, dict):
+        return None, "invalid torn response"
+
+    err = data.get("error")
+    if isinstance(err, dict):
+        msg = normalize_text(err.get("error") or err.get("message"))
+        return None, msg or "torn api returned an error"
+    if err:
+        return None, normalize_text(err) or "torn api returned an error"
+
+    return data, None
 
 def role_from_position(position: str) -> str:
     p = normalize_text(position).lower()
@@ -112,12 +138,12 @@ def role_from_position(position: str) -> str:
 
 
 def verify_admin_by_key(api_key: str):
-    data = torn_lookup_user(api_key)
+    data, lookup_err = torn_lookup_user(api_key)
     if not data:
-        return None, "admin login failed"
+        return None, lookup_err or "admin login failed"
     info = parse_torn_key_info(data)
     if not info["player_id"]:
-        return None, "admin login failed"
+        return None, "admin key recognized but no player id was returned"
     if ADMIN_PLAYER_ID and info["player_id"] != ADMIN_PLAYER_ID:
         return None, "not configured admin"
     return {
@@ -133,12 +159,12 @@ def verify_admin_by_key(api_key: str):
 def verify_faction_member(auth: dict[str, Any]):
     api_key = normalize_text(auth.get("api_key"))
     faction_id_lock = normalize_text(auth.get("faction_id")) or FACTION_ID
-    data = torn_lookup_user(api_key)
+    data, lookup_err = torn_lookup_user(api_key)
     if not data:
-        return None, "member login failed"
+        return None, lookup_err or "member login failed"
     info = parse_torn_key_info(data)
     if not info["player_id"]:
-        return None, "member login failed"
+        return None, "member key recognized but no player id was returned"
     if faction_id_lock and info["faction_id"] != faction_id_lock:
         return None, "wrong faction"
     return {
@@ -290,7 +316,7 @@ def warstack_set_state():
     user, err = verify_any_logged_in_user(auth)
     if not user:
         return json_error(err or "auth failed", 403)
-    if not user_can_manage_war_tab(user):
+    if not user_can_manage_warstack(user):
         return json_error("only admin, leader, co-leader, or configured managers may activate or deactivate the war tab", 403)
     claims.set_war_tab_state(
         enabled=normalize_bool(payload.get("enabled")),
