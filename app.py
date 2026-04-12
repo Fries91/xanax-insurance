@@ -265,6 +265,27 @@ def build_war_tab_state(user: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+
+
+def build_alert_state(user: dict[str, Any]) -> dict[str, Any]:
+    counts = claims.get_alert_counts()
+    counts["viewerIsAdmin"] = normalize_text(user.get("role")).lower() == "admin"
+    counts["viewerRole"] = normalize_text(user.get("role"))
+    return counts
+
+
+def get_required_payment(plan: str, stage: str = "") -> tuple[str, str]:
+    p = normalize_text(plan).lower()
+    s = normalize_text(stage).lower()
+    if p == "pride":
+        return "Xanax", "2"
+    if p == "envy":
+        return "Xanax", "5"
+    if p == "wrath":
+        return "Xanax", "2"
+    if p == "greed":
+        return "Xanax", "1"
+    return "Xanax", "0"
 def build_xanax_request_state(user: dict[str, Any]) -> dict[str, Any]:
     state = claims.get_xanax_request_state()
     state["viewerCanRequest"] = user_can_request_xanax(user)
@@ -474,6 +495,120 @@ def xanax_request_reset():
     )
     state = build_xanax_request_state(user)
     return jsonify({"ok": True, "state": state})
+
+
+@app.route("/api/alerts/state", methods=["POST", "OPTIONS"])
+def alerts_state():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    return jsonify({"ok": True, "state": build_alert_state(user)})
+
+@app.route("/api/activations/pull", methods=["POST", "OPTIONS"])
+def activations_pull():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    status = normalize_text(payload.get("status")) or None
+    if normalize_text(user.get("role")).lower() == "admin":
+        rows = claims.list_activations(status=status)
+    else:
+        rows = claims.list_activations(member_id=normalize_text(user.get("player_id")), status=status)
+    return jsonify({"ok": True, "activations": rows})
+
+@app.route("/api/activations/push", methods=["POST", "OPTIONS"])
+def activations_push():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    action = normalize_text(payload.get("action"))
+    auth = payload.get("auth") or {}
+    activation = payload.get("activation") or {}
+    activation_id = normalize_text(activation.get("id"))
+    if not activation_id:
+        return json_error("missing activation id", 400)
+
+    existing = claims.get_activation(activation_id)
+
+    if action == "member_request":
+        user, err = verify_faction_member(auth)
+        if not user:
+            return json_error(err or "member auth failed", 403)
+        plan = normalize_text(activation.get("plan"))
+        stage = normalize_text(activation.get("stage"))
+        item, qty = get_required_payment(plan, stage)
+        clean = {
+            "id": activation_id,
+            "member": normalize_text(user.get("name")),
+            "memberId": normalize_text(user.get("player_id")),
+            "plan": plan,
+            "stage": stage,
+            "status": "Pending verification",
+            "requiredPaymentItem": item,
+            "requiredPaymentQty": qty,
+            "paymentNote": normalize_text(activation.get("paymentNote")),
+            "memberPaymentVerified": 0,
+            "memberPaymentVerifiedAt": "",
+            "adminReceiptVerified": 0,
+            "adminReceiptVerifiedAt": "",
+            "reviewedBy": "",
+            "reviewNote": "",
+            "createdAt": normalize_text(existing.get("createdAt")) if existing else now_iso(),
+            "updatedAt": now_iso(),
+        }
+        claims.upsert_activation(clean)
+        history.add_entry(activation_id, f'{user["name"]} [{user["player_id"]}] requested activation for {plan} {stage}.')
+        return jsonify({"ok": True, "activation": claims.get_activation(activation_id)})
+
+    admin_key = normalize_text(auth.get("admin_api_key") or auth.get("api_key"))
+    user, err = verify_admin_by_key(admin_key)
+    if not user:
+        return json_error(err or "admin auth failed", 403)
+    if not existing:
+        return json_error("activation not found", 404)
+
+    clean = dict(existing)
+    clean["updatedAt"] = now_iso()
+    clean["reviewedBy"] = normalize_text(user.get("name"))
+    clean["reviewNote"] = normalize_text(activation.get("reviewNote")) or normalize_text(existing.get("reviewNote"))
+
+    if action == "admin_verify_payment":
+        clean["memberPaymentVerified"] = 1
+        clean["memberPaymentVerifiedAt"] = now_iso()
+        clean["status"] = "Pending receipt"
+        claims.upsert_activation(clean)
+        history.add_entry(activation_id, f'Admin {user["name"]} verified member payment.')
+        return jsonify({"ok": True, "activation": claims.get_activation(activation_id)})
+
+    if action == "admin_verify_receipt":
+        clean["adminReceiptVerified"] = 1
+        clean["adminReceiptVerifiedAt"] = now_iso()
+        clean["status"] = "Activated"
+        claims.upsert_activation(clean)
+        history.add_entry(activation_id, f'Admin {user["name"]} verified receipt and activated the plan.')
+        return jsonify({"ok": True, "activation": claims.get_activation(activation_id)})
+
+    if action == "admin_reject":
+        clean["status"] = "Rejected"
+        claims.upsert_activation(clean)
+        history.add_entry(activation_id, f'Admin {user["name"]} rejected activation. {clean["reviewNote"]}')
+        return jsonify({"ok": True, "activation": claims.get_activation(activation_id)})
+
+    return json_error("invalid activation action", 400)
 
 @app.route("/api/claims/history", methods=["POST", "OPTIONS"])
 def claim_history():
