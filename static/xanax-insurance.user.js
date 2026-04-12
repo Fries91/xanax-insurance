@@ -1032,21 +1032,11 @@
                     fetchFinancialSummary();
                     syncClaimsFromBackend();
                 } else {
-                    var raw = (memberData && memberData.error) ? String(memberData.error) : 'Login failed.';
-                    var lower = raw.toLowerCase();
-                    var msg = raw;
-                    if (lower.indexOf('wrong faction') >= 0) {
-                        msg = 'This API key is not in the allowed faction.';
-                    } else if (lower.indexOf('member api key not recognized') >= 0 || lower.indexOf('member login failed') >= 0) {
-                        msg = 'Torn API key not recognized. Check that the key is valid and has access for this account.';
-                    } else if (lower.indexOf('unauthorized') >= 0) {
-                        msg = 'Login blocked by backend settings.';
-                    }
-                    window.alert(msg);
+                    window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
                 }
             });
         }).catch(function () {
-            window.alert('Login failed. Check your Torn API key and try again.');
+            window.alert('Login failed.');
         });
     }
 
@@ -1203,7 +1193,19 @@
             + '<div class="si-row"><span class="si-label">Admin Payouts Verified</span><span>' + esc(finPayoutCount) + '</span></div>'
         );
 
-        return financeCard + renderWarStackControls();
+        var coverageInfo = '';
+        if (activeCoveragePlan) {
+            coverageInfo = card('Active Coverage',
+                '<div class="si-row"><span class="si-label">Plan</span><span>' + esc(activeCoveragePlan || 'None') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Stage</span><span>' + esc(activeCoverageStage || '-') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(getPlanPayoutText(activeCoveragePlan, activeCoverageStage) || '-') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(isCoverageActive() ? 'Active' : (activeCoverageDetectStatus || 'Idle')) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Expires</span><span>' + esc(formatDateTime(activeCoverageExpiresAt)) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Remaining</span><span>' + esc(isCoverageActive() ? formatRemaining(currentCoverageRemainingMs()) : 'Not active') + '</span></div>'
+            );
+        }
+
+        return financeCard + coverageInfo + renderWarStackControls();
     }
 
     function renderPlans() {
@@ -1226,6 +1228,7 @@
 
             var activateButtons = '<div class="si-btnrow">'
                 + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
+                + '<button class="si-btn good" data-action="arm-plan" data-plan="' + esc(p.name) + '">Activate</button>'
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>';
 
