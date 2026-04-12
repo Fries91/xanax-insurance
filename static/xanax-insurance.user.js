@@ -250,6 +250,23 @@
         return p ? p.rule : 'No plan selected.';
     }
 
+    function getGreedPlanData() {
+        return {
+            name: 'Greed',
+            coverage: 'Faction war stack coverage',
+            payment: 'Uses active faction cut flow',
+            window: 'While War Stack is active',
+            payout: 'Admin review',
+            terms: [
+                'Greed Terms:',
+                'Only available when War Stack is activated.',
+                'Used from the War Stack tab.',
+                'Faction cut requests are handled in Xanax Request.',
+                'Admin review still applies to claims and payouts.'
+            ].join('\n')
+        };
+    }
+
     function getDetailedPlanTerms(name) {
         var p = getPlanByName(name);
         if (!p) return 'No plan selected.';
@@ -889,8 +906,9 @@
             if (state) {
                 warTabEnabled = !!state.enabled;
                 warTabUpdatedAt = state.updatedAt || '';
-                warTabUpdatedBy = state.updatedBy || '';
+                warTabUpdatedBy = state.updatedAt ? (state.updatedBy || '') : (state.updatedBy || '');
                 warTabViewerCanManage = !!state.viewerCanManage;
+                if (!warTabEnabled && activeTab === 'war_stack') activeTab = 'overview';
                 backendStatus = 'War Stack loaded';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
@@ -919,6 +937,7 @@
                 warTabUpdatedAt = state.updatedAt || '';
                 warTabUpdatedBy = state.updatedBy || '';
                 warTabViewerCanManage = !!state.viewerCanManage;
+                if (!warTabEnabled && activeTab === 'war_stack') activeTab = 'overview';
                 backendStatus = 'War Stack updated';
                 lastSyncAt = new Date().toLocaleString();
                 saveSession();
@@ -1411,6 +1430,25 @@
                 }).join('') : '<div class="si-text">No history yet.</div>');
     }
 
+    function renderWarStackTab() {
+        var greed = getGreedPlanData();
+        return ''
+            + card('War Stack',
+                '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(warTabEnabled ? 'Activated' : 'Inactive') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warTabUpdatedBy || 'Not set') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(formatDateTime(warTabUpdatedAt)) + '</span></div>'
+                + '<div class="si-text">This tab is only visible while War Stack is activated.</div>')
+            + card('Greed Plan',
+                '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(greed.coverage) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(greed.payment) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(greed.window) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(greed.payout) + '</span></div>'
+                + '<div class="si-btnrow">'
+                + '<button class="si-btn" id="si-greed-select">Select Greed</button>'
+                + '<button class="si-btn alt" id="si-greed-terms">Terms</button>'
+                + '</div>');
+    }
+
     function renderSettings() {
         return ''
             + card('Torn Login',
@@ -1497,6 +1535,18 @@
         var cancelCoverageBtn = overlay.querySelector('#si-cancel-coverage');
         if (cancelCoverageBtn) cancelCoverageBtn.addEventListener('click', cancelCoverageState);
 
+        var greedSelectBtn = overlay.querySelector('#si-greed-select');
+        if (greedSelectBtn) greedSelectBtn.addEventListener('click', function () {
+            selectedPlan = 'Greed';
+            saveSession();
+            renderOverlay();
+        });
+
+        var greedTermsBtn = overlay.querySelector('#si-greed-terms');
+        if (greedTermsBtn) greedTermsBtn.addEventListener('click', function () {
+            window.alert(getGreedPlanData().terms);
+        });
+
         var xrRequestBtn = overlay.querySelector('#si-xr-request');
         if (xrRequestBtn) xrRequestBtn.addEventListener('click', requestXanaxCut);
 
@@ -1553,6 +1603,7 @@
         if (activeTab === 'plans') body = renderPlans();
         if (activeTab === 'claims') body = renderClaims();
         if (activeTab === 'xanax_request') body = renderXanaxRequest();
+        if (activeTab === 'war_stack') body = renderWarStackTab();
         if (activeTab === 'settings') body = renderSettings();
 
         overlay.innerHTML = ''
@@ -1564,6 +1615,7 @@
             + '<button class="si-tab ' + (activeTab === 'overview' ? 'active' : '') + '" data-tab="overview">Overview</button>'
             + '<button class="si-tab ' + (activeTab === 'plans' ? 'active' : '') + '" data-tab="plans">Plans</button>'
             + '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims</button>'
+            + (warTabEnabled ? '<button class=\"si-tab ' + (activeTab === 'war_stack' ? 'active' : '') + '\" data-tab=\"war_stack\">War Stack</button>' : '')
             + '<button class="si-tab ' + (activeTab === 'xanax_request' ? 'active' : '') + '" data-tab="xanax_request">Xanax Request</button>'
             + '<button class="si-tab ' + (activeTab === 'settings' ? 'active' : '') + '" data-tab="settings">Settings</button>'
             + '</div>'
