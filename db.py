@@ -427,8 +427,10 @@ class ClaimsStore(BaseStore):
             )
             conn.commit()
 
-    def get_warstack_state(self) -> dict[str, Any]:
-        row = self.get_setting("warstack_enabled", "0")
+    def get_war_tab_state(self) -> dict[str, Any]:
+        row = self.get_setting("war_tab_enabled", "")
+        if not str(row.get("value", "")).strip():
+            row = self.get_setting("war_tab_enabled", "0")
         value = str(row.get("value", "0")).strip().lower()
         enabled = 1 if value in {"1", "true", "yes", "on"} else 0
         return {
@@ -438,9 +440,9 @@ class ClaimsStore(BaseStore):
             "updatedById": str(row.get("updatedById", "")),
         }
 
-    def set_warstack_state(self, enabled: int | bool, updated_by: str = "", updated_by_id: str = "") -> None:
+    def set_war_tab_state(self, enabled: int | bool, updated_by: str = "", updated_by_id: str = "") -> None:
         self.set_setting(
-            "warstack_enabled",
+            "war_tab_enabled",
             "1" if int(enabled or 0) else "0",
             updated_by=updated_by,
             updated_by_id=updated_by_id,
@@ -502,3 +504,10 @@ class ClaimHistoryStore(BaseStore):
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+
+    def get_warstack_state(self) -> dict[str, Any]:
+        return self.get_war_tab_state()
+
+    def set_warstack_state(self, enabled: int | bool, updated_by: str = "", updated_by_id: str = "") -> None:
+        self.set_war_tab_state(enabled, updated_by=updated_by, updated_by_id=updated_by_id)
