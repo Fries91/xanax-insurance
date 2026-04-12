@@ -1857,6 +1857,7 @@
         if (!overlay) return;
 
         var body = renderOverview();
+        if (activeTab === 'rules') body = renderRules();
         if (activeTab === 'plans') body = renderPlans();
         if (activeTab === 'claims') body = renderClaims();
         if (activeTab === 'activations') body = renderActivations();
@@ -2020,4 +2021,3 @@
         boot();
     }
 })();
-
