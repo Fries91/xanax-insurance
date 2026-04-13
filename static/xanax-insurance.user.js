@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      4.0.2
+// @version      4.0.3
 // @description  Sinner's Insurance
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -82,6 +82,7 @@
     var activationsDb = gv('si_activations_db', '[]');
     var selectedActivationId = gv('si_selected_activation_id', '');
     var activationNotice = gv('si_activation_notice', '');
+    var membersUsingScriptCount = Number(gv('si_members_using_script_count', 0) || 0);
 
     var scanTimer = null;
     var activeCoverageEnabled = !!gv('si_active_coverage_enabled', 0);
@@ -225,6 +226,7 @@
         sv('si_activations_db', activationsDb || '[]');
         sv('si_selected_activation_id', selectedActivationId || '');
         sv('si_activation_notice', activationNotice || '');
+        sv('si_members_using_script_count', membersUsingScriptCount || 0);
         sv('si_active_coverage_enabled', activeCoverageEnabled ? 1 : 0);
         sv('si_active_coverage_plan', activeCoveragePlan || '');
         sv('si_active_coverage_stage', activeCoverageStage || '');
@@ -967,6 +969,30 @@
         }).then(function (res) { return res.json(); });
     }
 
+    function touchScriptUsage() {
+        if (!syncSecret || !singleApiKey) return Promise.resolve(null);
+        return apiRequest('POST', '/api/usage/touch', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload(),
+            platform: 'pda'
+        }).catch(function () { return null; });
+    }
+
+    function fetchUsageSummary() {
+        if (!syncSecret || !isAdmin()) return Promise.resolve(null);
+        return apiRequest('POST', '/api/usage/summary', {
+            secret: syncSecret,
+            auth: buildServerAuthPayload()
+        }).then(function (data) {
+            if (data && data.ok) {
+                membersUsingScriptCount = Number(data.membersUsingScript || 0);
+                saveSession();
+                renderOverlay();
+            }
+            return data;
+        }).catch(function () { return null; });
+    }
+
     function buildServerAuthPayload() {
         return {
             mode: authMode || 'local',
@@ -1208,9 +1234,11 @@
                 renderOverlay();
                 fetchWarTabState();
                 fetchFinancialSummary();
+                fetchUsageSummary();
                 fetchXanaxRequestState();
                 fetchAlertsState();
                 fetchActivations();
+                touchScriptUsage();
                 syncClaimsFromBackend();
                 return;
             }
@@ -1231,6 +1259,7 @@
                     renderOverlay();
                     fetchWarTabState();
                     fetchFinancialSummary();
+                    touchScriptUsage();
                     syncClaimsFromBackend();
                 } else {
                     window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
@@ -1473,6 +1502,26 @@
         );
     }
 
+    function renderWarStackTab() {
+        var greed = getGreedPlanData();
+        return ''
+            + card('War Stack',
+                '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(warTabEnabled ? 'Activated' : 'Inactive') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warTabUpdatedBy || 'Not set') + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(warTabUpdatedAt || 'Never') + '</span></div>'
+                + '<div class="si-text">When War Stack is active, the Greed plan can be used from this tab.</div>')
+            + card('Greed',
+                '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(greed.coverage) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(greed.payment) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(greed.window) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(greed.payout) + '</span></div>'
+                + '<div class="si-btnrow">'
+                + '<button id="si-greed-select" class="si-btn">Select Greed</button>'
+                + '<button id="si-greed-activate" class="si-btn good">Activate Greed</button>'
+                + '<button id="si-greed-terms" class="si-btn alt">Terms</button>'
+                + '</div>');
+    }
+
     function renderOldPlanRows(rows) {
         return rows.map(function (row) {
             return '<div class="si-row"><span class="si-label">' + esc(row[0]) + '</span><span>' + esc(row[1]) + '</span></div>';
@@ -1521,7 +1570,8 @@
         var adminAlerts = isAdmin()
             ? card('Admin Alerts',
                 '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>')
+                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Members Using Script</span><span>' + esc(membersUsingScriptCount) + '</span></div>')
             : '';
 
         var coverageInfo = '';
@@ -1676,6 +1726,7 @@
                 if (activeTab === 'overview') {
                     fetchFinancialSummary();
                     fetchWarTabState();
+                    fetchUsageSummary();
                 }
                 if (activeTab === 'xanax_request') fetchXanaxRequestState();
                 if (activeTab === 'activations') fetchActivations();
@@ -1742,6 +1793,13 @@
         var greedTermsBtn = overlay.querySelector('#si-greed-terms');
         if (greedTermsBtn) greedTermsBtn.addEventListener('click', function () {
             window.alert(getGreedPlanData().terms);
+        });
+
+        var greedActivateBtn = overlay.querySelector('#si-greed-activate');
+        if (greedActivateBtn) greedActivateBtn.addEventListener('click', function () {
+            selectedPlan = 'Greed';
+            saveSession();
+            armPlanCoverage('Greed', '');
         });
 
         var xrRequestBtn = overlay.querySelector('#si-xr-request');
