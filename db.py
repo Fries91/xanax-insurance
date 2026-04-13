@@ -137,6 +137,20 @@ class ClaimsStore(BaseStore):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_at ON claim_history(at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member_id ON activation_requests(memberId)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_status ON activation_requests(status)")
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS script_users (
+                    memberId TEXT PRIMARY KEY,
+                    member TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL DEFAULT '',
+                    platform TEXT NOT NULL DEFAULT '',
+                    lastSeenAt TEXT NOT NULL DEFAULT '',
+                    createdAt TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_script_users_last_seen ON script_users(lastSeenAt)")
             conn.commit()
 
             needed = {
@@ -622,6 +636,32 @@ class ClaimsStore(BaseStore):
                 "unreadClaims": int(unread_claims or 0),
                 "pendingActivations": int(pending_activations or 0),
             }
+
+    def touch_script_user(self, member_id: str, member: str = "", role: str = "", platform: str = "") -> None:
+        member_id = str(member_id or "").strip()
+        if not member_id:
+            return
+        now = now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO script_users (memberId, member, role, platform, lastSeenAt, createdAt)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(memberId) DO UPDATE SET
+                    member=excluded.member,
+                    role=excluded.role,
+                    platform=excluded.platform,
+                    lastSeenAt=excluded.lastSeenAt
+                """,
+                (member_id, str(member or ""), str(role or ""), str(platform or ""), now, now),
+            )
+            conn.commit()
+
+    def count_script_users(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM script_users").fetchone()
+            return int((row["n"] if row else 0) or 0)
+
 
 class ClaimHistoryStore(BaseStore):
     def __init__(self, db_path: str) -> None:
