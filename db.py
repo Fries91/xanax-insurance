@@ -137,7 +137,6 @@ class ClaimsStore(BaseStore):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_claim_history_at ON claim_history(at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member_id ON activation_requests(memberId)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_status ON activation_requests(status)")
-
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS script_users (
@@ -637,6 +636,7 @@ class ClaimsStore(BaseStore):
                 "pendingActivations": int(pending_activations or 0),
             }
 
+
     def touch_script_user(self, member_id: str, member: str = "", role: str = "", platform: str = "") -> None:
         member_id = str(member_id or "").strip()
         if not member_id:
@@ -661,7 +661,6 @@ class ClaimsStore(BaseStore):
         with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) AS n FROM script_users").fetchone()
             return int((row["n"] if row else 0) or 0)
-
 
 class ClaimHistoryStore(BaseStore):
     def __init__(self, db_path: str) -> None:
