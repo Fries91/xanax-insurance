@@ -352,6 +352,40 @@ def auth_faction_login():
     return jsonify({"ok": True, "user": user})
 
 
+@app.route("/api/usage/touch", methods=["POST", "OPTIONS"])
+def usage_touch():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    claims.touch_script_user(
+        member_id=normalize_text(user.get("player_id")),
+        member=normalize_text(user.get("name")),
+        role=normalize_text(user.get("role")),
+        platform=normalize_text(payload.get("platform")) or "unknown",
+    )
+    return jsonify({"ok": True})
+
+@app.route("/api/usage/summary", methods=["POST", "OPTIONS"])
+def usage_summary():
+    if request.method == "OPTIONS":
+        return ok_options()
+    payload = request.get_json(silent=True) or {}
+    if not check_secret(payload):
+        return json_error("unauthorized", 403)
+    auth = payload.get("auth") or {}
+    user, err = verify_any_logged_in_user(auth)
+    if not user:
+        return json_error(err or "auth failed", 403)
+    if normalize_text(user.get("role")).lower() != "admin":
+        return json_error("admin only", 403)
+    return jsonify({"ok": True, "membersUsingScript": claims.count_script_users()})
+
 @app.route("/api/claims/pull", methods=["POST", "OPTIONS"])
 def pull_claims():
     if request.method == "OPTIONS":
