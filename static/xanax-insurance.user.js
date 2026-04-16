@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      4.0.3
+// @version      4.0.2
 // @description  Sinner's Insurance
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -82,7 +82,6 @@
     var activationsDb = gv('si_activations_db', '[]');
     var selectedActivationId = gv('si_selected_activation_id', '');
     var activationNotice = gv('si_activation_notice', '');
-    var membersUsingScriptCount = Number(gv('si_members_using_script_count', 0) || 0);
 
     var scanTimer = null;
     var activeCoverageEnabled = !!gv('si_active_coverage_enabled', 0);
@@ -103,9 +102,9 @@
         {
             name: 'Pride',
             coverage: '6 Xanax',
-            payment: '2 Xanax',
+            payment: '1 Xanax',
             window: '30 mins',
-            payout: 'Up to 6 Xanax',
+            payout: '6 Xanax',
             stackType: 'any',
             rule: 'Can start with any amount of energy.',
             oldRows: [
@@ -120,7 +119,7 @@
             coverage: '25 Xanax + 3 E-DVD',
             payment: '5 Xanax',
             window: '30 mins',
-            payout: 'Plan review',
+            payout: '10 Xanax + 2 E-DVD',
             stackType: 'mixed',
             rule: 'Use for approved Envy claims only.',
             oldRows: [
@@ -135,14 +134,14 @@
             coverage: 'Stage based',
             payment: '2 Xanax each stage',
             window: '30 mins each stage',
-            payout: '5 / 10 / 15 / 20 Xanax',
+            payout: '4 / 5 / 6 / 8 Xanax',
             stackType: 'xanax',
             rule: 'Each stage has a required starting energy amount and must be armed on the matching stage.',
             stages: [
-                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
-                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '10 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
-                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '15 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
-                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '20 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
+                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '4 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
+                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
+                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '6 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
+                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '8 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
                 ['Coverage', 'Stage based'],
@@ -226,7 +225,6 @@
         sv('si_activations_db', activationsDb || '[]');
         sv('si_selected_activation_id', selectedActivationId || '');
         sv('si_activation_notice', activationNotice || '');
-        sv('si_members_using_script_count', membersUsingScriptCount || 0);
         sv('si_active_coverage_enabled', activeCoverageEnabled ? 1 : 0);
         sv('si_active_coverage_plan', activeCoveragePlan || '');
         sv('si_active_coverage_stage', activeCoverageStage || '');
@@ -288,15 +286,15 @@
     function getGreedPlanData() {
         return {
             name: 'Greed',
-            coverage: '2 Feathery Hotel Coupon',
-            payment: '1 Xanax',
+            coverage: '1 Feathery Hotel Coupon',
+            payment: '2 Xanax',
             window: '30 mins',
-            payout: 'Admin review',
+            payout: '1 Feathery Hotel Coupon',
             terms: [
                 'Greed Terms:',
                 'Any energy.',
                 'Payment: 1 Xanax.',
-                'Coverage: 2 Feathery Hotel Coupon.',
+                'Payout: 1 Feathery Hotel Coupon.',
                 'Window: 30 mins.',
                 'Only available when War Stack is activated.'
             ].join('\n')
@@ -311,10 +309,10 @@
                 'Wrath Terms:',
                 'Window: 30 mins for every stage.',
                 'Payment: 2 Xanax per stage.',
-                'Stage 1 payout: 5 Xanax | Terms: Start at 0 energy.',
-                'Stage 2 payout: 10 Xanax | Terms: Start at 250 energy.',
-                'Stage 3 payout: 15 Xanax | Terms: Start at 500 energy.',
-                'Stage 4 payout: 20 Xanax | Terms: Start at 750 energy.'
+                'Stage 1 payout: 4 Xanax | Terms: Start at 0 energy.',
+                'Stage 2 payout: 5 Xanax | Terms: Start at 250 energy.',
+                'Stage 3 payout: 6 Xanax | Terms: Start at 500 energy.',
+                'Stage 4 payout: 8 Xanax | Terms: Start at 750 energy.'
             ].join('\n');
         }
         if (name === 'Envy') {
@@ -324,7 +322,7 @@
                 'Must start with 1000 energy.',
                 'Must start with 0 booster cool down.',
                 'Can use Wrath for stack.',
-                'Coverage: 25 Xanax + 3 E-DVD.',
+                'Payout: 10 Xanax + 2 E-DVD.',
                 'Payment: 5 Xanax.',
                 'Window: 30 mins.'
             ].join('\n');
@@ -332,8 +330,8 @@
         if (name === 'Pride') {
             return [
                 'Pride Terms:',
-                'Coverage: 6 Xanax.',
-                'Payment: 2 Xanax.',
+                'Payout: 6 Xanax.',
+                'Payment: 1 Xanax.',
                 'Window: 30 mins.',
                 p.rule
             ].join('\n');
@@ -969,30 +967,6 @@
         }).then(function (res) { return res.json(); });
     }
 
-    function touchScriptUsage() {
-        if (!syncSecret || !singleApiKey) return Promise.resolve(null);
-        return apiRequest('POST', '/api/usage/touch', {
-            secret: syncSecret,
-            auth: buildServerAuthPayload(),
-            platform: 'pda'
-        }).catch(function () { return null; });
-    }
-
-    function fetchUsageSummary() {
-        if (!syncSecret || !isAdmin()) return Promise.resolve(null);
-        return apiRequest('POST', '/api/usage/summary', {
-            secret: syncSecret,
-            auth: buildServerAuthPayload()
-        }).then(function (data) {
-            if (data && data.ok) {
-                membersUsingScriptCount = Number(data.membersUsingScript || 0);
-                saveSession();
-                renderOverlay();
-            }
-            return data;
-        }).catch(function () { return null; });
-    }
-
     function buildServerAuthPayload() {
         return {
             mode: authMode || 'local',
@@ -1234,11 +1208,9 @@
                 renderOverlay();
                 fetchWarTabState();
                 fetchFinancialSummary();
-                fetchUsageSummary();
                 fetchXanaxRequestState();
                 fetchAlertsState();
                 fetchActivations();
-                touchScriptUsage();
                 syncClaimsFromBackend();
                 return;
             }
@@ -1259,7 +1231,6 @@
                     renderOverlay();
                     fetchWarTabState();
                     fetchFinancialSummary();
-                    touchScriptUsage();
                     syncClaimsFromBackend();
                 } else {
                     window.alert((memberData && memberData.error) ? memberData.error : 'Login failed.');
@@ -1502,26 +1473,6 @@
         );
     }
 
-    function renderWarStackTab() {
-        var greed = getGreedPlanData();
-        return ''
-            + card('War Stack',
-                '<div class="si-row"><span class="si-label">Status</span><span class="si-badge">' + esc(warTabEnabled ? 'Activated' : 'Inactive') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Updated By</span><span>' + esc(warTabUpdatedBy || 'Not set') + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Updated At</span><span>' + esc(warTabUpdatedAt || 'Never') + '</span></div>'
-                + '<div class="si-text">When War Stack is active, the Greed plan can be used from this tab.</div>')
-            + card('Greed',
-                '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(greed.coverage) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(greed.payment) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(greed.window) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(greed.payout) + '</span></div>'
-                + '<div class="si-btnrow">'
-                + '<button id="si-greed-select" class="si-btn">Select Greed</button>'
-                + '<button id="si-greed-activate" class="si-btn good">Activate Greed</button>'
-                + '<button id="si-greed-terms" class="si-btn alt">Terms</button>'
-                + '</div>');
-    }
-
     function renderOldPlanRows(rows) {
         return rows.map(function (row) {
             return '<div class="si-row"><span class="si-label">' + esc(row[0]) + '</span><span>' + esc(row[1]) + '</span></div>';
@@ -1570,8 +1521,7 @@
         var adminAlerts = isAdmin()
             ? card('Admin Alerts',
                 '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Members Using Script</span><span>' + esc(membersUsingScriptCount) + '</span></div>')
+                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>')
             : '';
 
         var coverageInfo = '';
@@ -1726,7 +1676,6 @@
                 if (activeTab === 'overview') {
                     fetchFinancialSummary();
                     fetchWarTabState();
-                    fetchUsageSummary();
                 }
                 if (activeTab === 'xanax_request') fetchXanaxRequestState();
                 if (activeTab === 'activations') fetchActivations();
@@ -1793,13 +1742,6 @@
         var greedTermsBtn = overlay.querySelector('#si-greed-terms');
         if (greedTermsBtn) greedTermsBtn.addEventListener('click', function () {
             window.alert(getGreedPlanData().terms);
-        });
-
-        var greedActivateBtn = overlay.querySelector('#si-greed-activate');
-        if (greedActivateBtn) greedActivateBtn.addEventListener('click', function () {
-            selectedPlan = 'Greed';
-            saveSession();
-            armPlanCoverage('Greed', '');
         });
 
         var xrRequestBtn = overlay.querySelector('#si-xr-request');
