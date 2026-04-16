@@ -104,6 +104,8 @@ class ClaimsStore(BaseStore):
                     status TEXT NOT NULL DEFAULT '',
                     requiredPaymentItem TEXT NOT NULL DEFAULT '',
                     requiredPaymentQty TEXT NOT NULL DEFAULT '',
+                    expectedPayoutItem TEXT NOT NULL DEFAULT '',
+                    expectedPayoutQty TEXT NOT NULL DEFAULT '',
                     paymentNote TEXT NOT NULL DEFAULT '',
                     memberPaymentVerified INTEGER NOT NULL DEFAULT 0,
                     memberPaymentVerifiedAt TEXT NOT NULL DEFAULT '',
@@ -150,6 +152,8 @@ class ClaimsStore(BaseStore):
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_script_users_last_seen ON script_users(lastSeenAt)")
+            self._ensure_column(conn, "activation_requests", "expectedPayoutItem", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "activation_requests", "expectedPayoutQty", "TEXT NOT NULL DEFAULT ''")
             conn.commit()
 
             needed = {
@@ -559,6 +563,8 @@ class ClaimsStore(BaseStore):
             "status": str(activation.get("status", "")),
             "requiredPaymentItem": str(activation.get("requiredPaymentItem", "")),
             "requiredPaymentQty": str(activation.get("requiredPaymentQty", "")),
+            "expectedPayoutItem": str(activation.get("expectedPayoutItem", "")),
+            "expectedPayoutQty": str(activation.get("expectedPayoutQty", "")),
             "paymentNote": str(activation.get("paymentNote", "")),
             "memberPaymentVerified": int(activation.get("memberPaymentVerified", 0) or 0),
             "memberPaymentVerifiedAt": str(activation.get("memberPaymentVerifiedAt", "")),
@@ -574,14 +580,14 @@ class ClaimsStore(BaseStore):
                 """
                 INSERT INTO activation_requests (
                     id, member, memberId, plan, stage, status,
-                    requiredPaymentItem, requiredPaymentQty, paymentNote,
+                    requiredPaymentItem, requiredPaymentQty, expectedPayoutItem, expectedPayoutQty, paymentNote,
                     memberPaymentVerified, memberPaymentVerifiedAt,
                     adminReceiptVerified, adminReceiptVerifiedAt,
                     reviewedBy, reviewNote, createdAt, updatedAt
                 )
                 VALUES (
                     :id, :member, :memberId, :plan, :stage, :status,
-                    :requiredPaymentItem, :requiredPaymentQty, :paymentNote,
+                    :requiredPaymentItem, :requiredPaymentQty, :expectedPayoutItem, :expectedPayoutQty, :paymentNote,
                     :memberPaymentVerified, :memberPaymentVerifiedAt,
                     :adminReceiptVerified, :adminReceiptVerifiedAt,
                     :reviewedBy, :reviewNote, :createdAt, :updatedAt
@@ -594,6 +600,8 @@ class ClaimsStore(BaseStore):
                     status=excluded.status,
                     requiredPaymentItem=excluded.requiredPaymentItem,
                     requiredPaymentQty=excluded.requiredPaymentQty,
+                    expectedPayoutItem=excluded.expectedPayoutItem,
+                    expectedPayoutQty=excluded.expectedPayoutQty,
                     paymentNote=excluded.paymentNote,
                     memberPaymentVerified=excluded.memberPaymentVerified,
                     memberPaymentVerifiedAt=excluded.memberPaymentVerifiedAt,
