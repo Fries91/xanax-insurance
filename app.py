@@ -286,6 +286,28 @@ def get_required_payment(plan: str, stage: str = "") -> tuple[str, str]:
     if p == "greed":
         return "Xanax", "1"
     return "Xanax", "0"
+
+def get_expected_payout(plan: str, stage: str = "") -> tuple[str, str]:
+    p = normalize_text(plan).lower()
+    s = normalize_text(stage).lower()
+    if p == "pride":
+        return "Xanax", "6"
+    if p == "envy":
+        return "Mixed", "10 Xanax + 2 Erotic DVD"
+    if p == "wrath":
+        if "stage 1" in s:
+            return "Xanax", "4"
+        if "stage 2" in s:
+            return "Xanax", "5"
+        if "stage 3" in s:
+            return "Xanax", "6"
+        if "stage 4" in s:
+            return "Xanax", "8"
+        return "Xanax", "0"
+    if p == "greed":
+        return "Feathery Hotel Coupon", "1"
+    return "", ""
+
 def build_xanax_request_state(user: dict[str, Any]) -> dict[str, Any]:
     state = claims.get_xanax_request_state()
     state["viewerCanRequest"] = user_can_request_xanax(user)
@@ -585,6 +607,7 @@ def activations_push():
         plan = normalize_text(activation.get("plan"))
         stage = normalize_text(activation.get("stage"))
         item, qty = get_required_payment(plan, stage)
+        payout_item, payout_qty = get_expected_payout(plan, stage)
         clean = {
             "id": activation_id,
             "member": normalize_text(user.get("name")),
@@ -594,6 +617,8 @@ def activations_push():
             "status": "Pending verification",
             "requiredPaymentItem": item,
             "requiredPaymentQty": qty,
+            "expectedPayoutItem": payout_item,
+            "expectedPayoutQty": payout_qty,
             "paymentNote": normalize_text(activation.get("paymentNote")),
             "memberPaymentVerified": 0,
             "memberPaymentVerifiedAt": "",
