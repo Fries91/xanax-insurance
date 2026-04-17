@@ -140,10 +140,10 @@
             stackType: 'xanax',
             rule: 'Each stage has a required starting energy amount and must be armed on the matching stage.',
             stages: [
-                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '4 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
-                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
-                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '6 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
-                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '8 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
+                { stage: 'Stage 1', coverage: '5 Xanax', payment: '1 Xanax', payout: '4 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
+                { stage: 'Stage 2', coverage: '10 Xanax', payment: '1 Xanax', payout: '5 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
+                { stage: 'Stage 3', coverage: '15 Xanax', payment: '1 Xanax', payout: '6 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
+                { stage: 'Stage 4', coverage: '20 Xanax', payment: '1 Xanax', payout: '8 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
                 ['Coverage', 'Stage based'],
@@ -290,7 +290,7 @@
         return {
             name: 'Greed',
             coverage: '1 Feathery Hotel Coupon',
-            payment: '2 Xanax',
+            payment: '1 Xanax',
             window: '30 mins',
             payout: '1 Feathery Hotel Coupon',
             terms: [
