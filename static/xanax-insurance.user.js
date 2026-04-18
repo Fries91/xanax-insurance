@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sinner's Insurance 7DS
 // @namespace    fries91-xanax-insurance
-// @version      4.0.2
+// @version      4.0.3
 // @description  Sinner's Insurance
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -939,6 +939,26 @@
         };
     }
 
+
+    function getScriptUsersCount() {
+        var names = {};
+
+        getClaimsDbItems().forEach(function (item) {
+            var n = String(item && item.member || '').trim().toLowerCase();
+            if (n) names[n] = true;
+        });
+
+        getActivationsDbItems().forEach(function (item) {
+            var n = String(item && item.member || '').trim().toLowerCase();
+            if (n) names[n] = true;
+        });
+
+        var current = String(sessionName || '').trim().toLowerCase();
+        if (current && current !== 'guest') names[current] = true;
+
+        return Object.keys(names).length;
+    }
+
     function apiRequest(method, path, payload) {
         var url = String(apiBase || '').replace(/\/$/, '') + path;
 
@@ -1541,6 +1561,31 @@
         );
     }
 
+
+    function renderWarStackTab() {
+        var greed = getGreedPlanData();
+        var greedIsActive = isCoverageActive() && activeCoveragePlan === 'Greed';
+        var greedCountdown = greedIsActive
+            ? '<div class="si-row"><span class="si-label">Timer</span><span>' + esc(formatRemaining(currentCoverageRemainingMs())) + '</span></div>'
+            : '<div class="si-row"><span class="si-label">Timer</span><span>Not active</span></div>';
+
+        var greedButtons = '<div class="si-btnrow">'
+            + '<button id="si-greed-select" class="si-btn">Select</button>'
+            + '<button id="si-greed-arm" class="si-btn ' + (greedIsActive ? 'good' : '') + '">' + (greedIsActive ? 'Activated' : 'Activate') + '</button>'
+            + '<button id="si-greed-terms" class="si-btn alt">Terms</button>'
+            + '</div>';
+
+        return ''
+            + card('War Stack Greed',
+                '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(greed.coverage) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(greed.payment) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(greed.payout) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(greed.window) + '</span></div>'
+                + greedCountdown
+                + greedButtons
+            );
+    }
+
     function renderOldPlanRows(rows) {
         return rows.map(function (row) {
             return '<div class="si-row"><span class="si-label">' + esc(row[0]) + '</span><span>' + esc(row[1]) + '</span></div>';
@@ -1589,7 +1634,8 @@
         var adminAlerts = isAdmin()
             ? card('Admin Alerts',
                 '<div class="si-row"><span class="si-label">Unread Claims</span><span>' + esc(alertUnreadClaims) + '</span></div>'
-                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>')
+                + '<div class="si-row"><span class="si-label">Pending Activations</span><span>' + esc(alertPendingActivations) + '</span></div>'
+                + '<div class="si-row"><span class="si-label">Members Using Script</span><span>' + esc(getScriptUsersCount()) + '</span></div>')
             : '';
 
         var coverageInfo = '';
@@ -1612,19 +1658,29 @@
     function renderPlans() {
         return PLANS.map(function (p) {
             var rows = renderOldPlanRows(p.oldRows || []);
+            var planIsActive = isCoverageActive() && activeCoveragePlan === p.name && !activeCoverageStage;
+            var planCountdown = planIsActive
+                ? '<div class="si-row"><span class="si-label">Timer</span><span>' + esc(formatRemaining(currentCoverageRemainingMs())) + '</span></div>'
+                : '';
+
             var wrathStages = '';
             if (p.stages && p.stages.length) {
                 wrathStages = '<div class="si-wrath-wrap">'
                     + p.stages.map(function (s) {
+                        var stageIsActive = isCoverageActive() && activeCoveragePlan === p.name && activeCoverageStage === s.stage;
+                        var stageCountdown = stageIsActive
+                            ? '<div class="si-row"><span class="si-label">Timer</span><span>' + esc(formatRemaining(currentCoverageRemainingMs())) + '</span></div>'
+                            : '';
                         return '<div class="si-wrath-stage">'
                             + '<div class="si-wrath-title">' + esc(s.stage) + '</div>'
                             + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(s.payout) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(s.payment) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Terms</span><span>' + esc(s.terms) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(s.window) + '</span></div>'
+                            + stageCountdown
                             + '<div class="si-btnrow">'
                                 + '<button class="si-btn" data-action="select-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Select ' + esc(s.stage) + '</button>'
-                                + '<button class="si-btn good" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">Activate ' + esc(s.stage) + '</button>'
+                                + '<button class="si-btn ' + (stageIsActive ? 'good' : '') + '" data-action="arm-stage" data-plan="' + esc(p.name) + '" data-stage="' + esc(s.stage) + '">' + (stageIsActive ? 'Activated ' + esc(s.stage) : 'Activate ' + esc(s.stage)) + '</button>'
                             + '</div>'
                         + '</div>';
                     }).join('')
@@ -1634,12 +1690,12 @@
             var buttonRow = '<div class="si-btnrow">'
                 + '<button class="si-btn" data-action="select-plan" data-plan="' + esc(p.name) + '">Select</button>'
                 + ((p.name === 'Pride' || p.name === 'Envy')
-                    ? '<button class="si-btn good" data-action="arm-plan" data-plan="' + esc(p.name) + '">Activate</button>'
+                    ? '<button class="si-btn ' + (planIsActive ? 'good' : '') + '" data-action="arm-plan" data-plan="' + esc(p.name) + '">' + (planIsActive ? 'Activated' : 'Activate') + '</button>'
                     : '')
                 + '<button class="si-btn alt" data-action="terms-plan" data-plan="' + esc(p.name) + '">Terms</button>'
                 + '</div>';
 
-            return card(p.name, rows + wrathStages + buttonRow);
+            return card(p.name, rows + planCountdown + wrathStages + buttonRow);
         }).join('');
     }
 
@@ -1746,7 +1802,6 @@
                     fetchWarTabState();
                 }
                 if (activeTab === 'xanax_request') fetchXanaxRequestState();
-                if (activeTab === 'activations') fetchActivations();
                 if (activeTab === 'claims') fetchSelectedClaimHistory();
             });
         });
@@ -1806,6 +1861,11 @@
             selectedPlan = 'Greed';
             saveSession();
             renderOverlay();
+        });
+
+        var greedArmBtn = overlay.querySelector('#si-greed-arm');
+        if (greedArmBtn) greedArmBtn.addEventListener('click', function () {
+            armPlanCoverage('Greed', '');
         });
 
         var greedTermsBtn = overlay.querySelector('#si-greed-terms');
@@ -1894,7 +1954,7 @@
 
     function renderOverlay() {
         if (activeTab === 'claims' && !canSeeClaimsUi()) activeTab = 'overview';
-        if (activeTab === 'activations' && !canSeeActivationsUi()) activeTab = 'overview';
+        if (activeTab === 'activations') activeTab = 'overview';
         if (activeTab === 'xanax_request' && !canSeeXanaxRequestUi()) activeTab = 'overview';
         if (activeTab === 'war_stack' && !(warTabEnabled && canManageWarStackUi())) activeTab = 'overview';
         ensureMounted();
@@ -1904,7 +1964,6 @@
         if (activeTab === 'rules') body = renderRules();
         if (activeTab === 'plans') body = renderPlans();
         if (activeTab === 'claims') body = renderClaims();
-        if (activeTab === 'activations') body = renderActivations();
         if (activeTab === 'xanax_request') body = renderXanaxRequest();
         if (activeTab === 'war_stack') body = renderWarStackTab();
         if (activeTab === 'settings') body = renderSettings();
@@ -1919,7 +1978,6 @@
             + '<button class="si-tab ' + (activeTab === 'overview' ? 'active' : '') + '" data-tab="overview">Overview</button>'
             + '<button class="si-tab ' + (activeTab === 'plans' ? 'active' : '') + '" data-tab="plans">Plans</button>'
             + (canSeeClaimsUi() ? '<button class="si-tab ' + (activeTab === 'claims' ? 'active' : '') + '" data-tab="claims">Claims' + (alertUnreadClaims ? ' (' + alertUnreadClaims + ')' : '') + '</button>' : '')
-            + (canSeeActivationsUi() ? '<button class="si-tab ' + (activeTab === 'activations' ? 'active' : '') + '" data-tab="activations">Activations' + (alertPendingActivations ? ' (' + alertPendingActivations + ')' : '') + '</button>' : '')
             + (warTabEnabled && canManageWarStackUi() ? '<button class=\"si-tab ' + (activeTab === 'war_stack' ? 'active' : '') + '\" data-tab=\"war_stack\">War Stack</button>' : '')
             + (canSeeXanaxRequestUi() ? '<button class="si-tab ' + (activeTab === 'xanax_request' ? 'active' : '') + '" data-tab="xanax_request">Xanax Request</button>' : '')
             + '<button class="si-tab ' + (activeTab === 'settings' ? 'active' : '') + '" data-tab="settings">Settings</button>'
