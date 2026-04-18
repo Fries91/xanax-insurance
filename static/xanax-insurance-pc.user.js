@@ -66,8 +66,6 @@
     var factionIdLock = gv('si_faction_id_lock', '49384');
     var authMode = gv('si_auth_mode', 'local');
     var settingsNotice = gv('si_settings_notice', 'Waiting for API key save or login.');
-    var autoLoginTriedAt = gv('si_auto_login_tried_at', '');
-    var autoLoginBusy = false;
     var xanaxRequestTotalOwed = Number(gv('si_xr_total_owed', 0) || 0);
     var xanaxRequestRequested = !!gv('si_xr_requested', 0);
     var xanaxRequestRequestedAt = gv('si_xr_requested_at', '');
@@ -104,16 +102,16 @@
         {
             name: 'Pride',
             coverage: '6 Xanax',
-            payment: '1 Xanax',
+            payment: '2 Xanax',
             window: '30 mins',
-            payout: '6 Xanax',
+            payout: 'Up to 6 Xanax',
             stackType: 'any',
             rule: 'Can start with any amount of energy.',
             oldRows: [
                 ['Coverage', '6 Xanax'],
                 ['Payment', '2 Xanax'],
                 ['Window', '30 mins'],
-                ['Payout', 'Up to 6 Xanax']
+                ['Payout', '6 Xanax']
             ]
         },
         {
@@ -121,14 +119,14 @@
             coverage: '25 Xanax + 3 E-DVD',
             payment: '5 Xanax',
             window: '30 mins',
-            payout: '10 Xanax + 2 E-DVD',
+            payout: 'Plan review',
             stackType: 'mixed',
             rule: 'Use for approved Envy claims only.',
             oldRows: [
                 ['Coverage', '25 Xanax + 3 E-DVD'],
                 ['Payment', '5 Xanax'],
                 ['Window', '30 mins'],
-                ['Payout', 'Plan review']
+                ['Payout', '10 Xanax + 2 E-DVD']
             ]
         },
         {
@@ -136,20 +134,20 @@
             coverage: 'Stage based',
             payment: '2 Xanax each stage',
             window: '30 mins each stage',
-            payout: '4 / 5 / 6 / 8 Xanax',
+            payout: '5 / 10 / 15 / 20 Xanax',
             stackType: 'xanax',
             rule: 'Each stage has a required starting energy amount and must be armed on the matching stage.',
             stages: [
-                { stage: 'Stage 1', coverage: '5 Xanax', payment: '1 Xanax', payout: '4 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
-                { stage: 'Stage 2', coverage: '10 Xanax', payment: '1 Xanax', payout: '5 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
-                { stage: 'Stage 3', coverage: '15 Xanax', payment: '1 Xanax', payout: '6 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
-                { stage: 'Stage 4', coverage: '20 Xanax', payment: '1 Xanax', payout: '8 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
+                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
+                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '10 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
+                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '15 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
+                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '20 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
                 ['Coverage', 'Stage based'],
                 ['Payment', '2 Xanax each stage'],
                 ['Window', '30 mins each stage'],
-                ['Payout', '5 / 10 / 15 / 20 Xanax']
+                ['Payout', '4 / 5 / 6 / 8 Xanax']
             ]
         }
     ];
@@ -213,7 +211,6 @@
         sv('si_faction_id_lock', factionIdLock || '');
         sv('si_auth_mode', authMode || 'local');
         sv('si_settings_notice', settingsNotice || '');
-        sv('si_auto_login_tried_at', autoLoginTriedAt || '');
         sv('si_xr_total_owed', xanaxRequestTotalOwed || 0);
         sv('si_xr_requested', xanaxRequestRequested ? 1 : 0);
         sv('si_xr_requested_at', xanaxRequestRequestedAt || '');
@@ -289,15 +286,15 @@
     function getGreedPlanData() {
         return {
             name: 'Greed',
-            coverage: '1 Feathery Hotel Coupon',
+            coverage: '2 Feathery Hotel Coupon',
             payment: '1 Xanax',
             window: '30 mins',
-            payout: '1 Feathery Hotel Coupon',
+            payout: 'Admin review',
             terms: [
                 'Greed Terms:',
                 'Any energy.',
                 'Payment: 1 Xanax.',
-                'Payout: 1 Feathery Hotel Coupon.',
+                'Coverage: 2 Feathery Hotel Coupon.',
                 'Window: 30 mins.',
                 'Only available when War Stack is activated.'
             ].join('\n')
@@ -333,8 +330,8 @@
         if (name === 'Pride') {
             return [
                 'Pride Terms:',
-                'Payout: 6 Xanax.',
-                'Payment: 1 Xanax.',
+                'Coverage: 6 Xanax.',
+                'Payment: 2 Xanax.',
                 'Window: 30 mins.',
                 p.rule
             ].join('\n');
@@ -494,7 +491,6 @@
         });
         saveSession();
         renderOverlay();
-        maybeAutoLogin(false);
         pushActivation('member_request', {
             id: activationId,
             plan: name,
@@ -1188,73 +1184,6 @@
         });
     }
 
-    function finishLoginSuccess(user, roleLabel) {
-        sessionRole = (user && user.role) ? user.role : (roleLabel || 'member');
-        sessionName = (user && user.name) ? user.name : 'Member';
-        authMode = 'backend';
-        backendStatus = roleLabel === 'admin' ? 'Admin login ok' : 'Member login ok';
-        settingsNotice = 'Login successful. Signed in as ' + sessionName + '.';
-        lastSyncAt = new Date().toLocaleString();
-        autoLoginTriedAt = new Date().toISOString();
-        saveSession();
-        renderOverlay();
-        if (typeof touchScriptUsage === 'function') touchScriptUsage();
-        if (typeof fetchWarTabState === 'function') fetchWarTabState();
-        if (typeof fetchFinancialSummary === 'function') fetchFinancialSummary();
-        if (typeof fetchUsageSummary === 'function') fetchUsageSummary();
-        if (typeof fetchXanaxRequestState === 'function') fetchXanaxRequestState();
-        if (typeof syncClaimsFromBackend === 'function') syncClaimsFromBackend();
-        if (typeof fetchAlerts === 'function') fetchAlerts();
-        if (typeof fetchActivations === 'function') fetchActivations();
-    }
-
-    function tryBackendLoginSilently() {
-        if (!singleApiKey || autoLoginBusy) return Promise.resolve(false);
-        autoLoginBusy = true;
-
-        return apiRequest('POST', '/api/auth/admin-key-login', {
-            secret: syncSecret,
-            api_key: singleApiKey
-        }).then(function (data) {
-            if (data && data.ok && data.user) {
-                finishLoginSuccess(data.user, 'admin');
-                autoLoginBusy = false;
-                return true;
-            }
-            return apiRequest('POST', '/api/auth/faction-login', {
-                secret: syncSecret,
-                api_key: singleApiKey,
-                faction_id: factionIdLock
-            }).then(function (memberData) {
-                if (memberData && memberData.ok && memberData.user) {
-                    finishLoginSuccess(memberData.user, 'member');
-                    autoLoginBusy = false;
-                    return true;
-                }
-                autoLoginBusy = false;
-                return false;
-            });
-        }).catch(function () {
-            autoLoginBusy = false;
-            return false;
-        });
-    }
-
-    function maybeAutoLogin(force) {
-        if (!singleApiKey) return Promise.resolve(false);
-        if (sessionRole !== 'guest' && !force) return Promise.resolve(true);
-
-        var now = Date.now();
-        var lastTry = Date.parse(String(autoLoginTriedAt || '')) || 0;
-        if (!force && lastTry && (now - lastTry) < 15000) {
-            return Promise.resolve(false);
-        }
-
-        autoLoginTriedAt = new Date().toISOString();
-        saveSession();
-        return tryBackendLoginSilently();
-    }
-
     function singleBackendLogin() {
         if (!apiBase || !syncSecret || !singleApiKey) {
             window.alert('Enter your Torn API key first.');
@@ -1777,7 +1706,6 @@
             settingsNotice = singleApiKey ? 'API key saved successfully.' : 'No API key saved yet.';
             saveSession();
             renderOverlay();
-            maybeAutoLogin(true);
         });
 
         var applyFiltersBtn = overlay.querySelector('#si-apply-filters');
@@ -2044,7 +1972,6 @@
     function boot() {
         ensureMounted();
         ensureCoverageTimer();
-        maybeAutoLogin(false);
         fetchXanaxRequestState();
         fetchAlertsState();
         fetchActivations();
