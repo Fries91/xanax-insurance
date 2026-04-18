@@ -106,7 +106,7 @@
             coverage: '6 Xanax',
             payment: '2 Xanax',
             window: '30 mins',
-            payout: 'Up to 6 Xanax',
+            payout: '6 Xanax',
             stackType: 'any',
             rule: 'Can start with any amount of energy.',
             oldRows: [
@@ -120,7 +120,7 @@
             coverage: '25 Xanax + 3 E-DVD',
             payment: '5 Xanax',
             window: '30 mins',
-            payout: 'Plan review',
+            payout: '10 Xanax + 2 E-DVD',
             stackType: 'mixed',
             rule: 'Use for approved Envy claims only.',
             oldRows: [
@@ -134,14 +134,14 @@
             coverage: 'Stage based',
             payment: '2 Xanax each stage',
             window: '30 mins each stage',
-            payout: '5 / 10 / 15 / 20 Xanax',
+            payout: '4 / 5 / 6 / 8 Xanax',
             stackType: 'xanax',
             rule: 'Each stage has a required starting energy amount and must be armed on the matching stage.',
             stages: [
-                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
-                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '10 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
-                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '15 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
-                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '20 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
+                { stage: 'Stage 1', coverage: '5 Xanax', payment: '2 Xanax', payout: '4 Xanax', terms: 'Start at 0 energy', window: '30 mins' },
+                { stage: 'Stage 2', coverage: '10 Xanax', payment: '2 Xanax', payout: '5 Xanax', terms: 'Start at 250 energy', window: '30 mins' },
+                { stage: 'Stage 3', coverage: '15 Xanax', payment: '2 Xanax', payout: '6 Xanax', terms: 'Start at 500 energy', window: '30 mins' },
+                { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '8 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
                 ['Payment', '2 Xanax each stage'],
@@ -286,15 +286,15 @@
     function getGreedPlanData() {
         return {
             name: 'Greed',
-            coverage: '2 Feathery Hotel Coupon',
+            coverage: '1 Feathery Hotel Coupon',
             payment: '1 Xanax',
             window: '30 mins',
-            payout: 'Admin review',
+            payout: '1 Feathery Hotel Coupon',
             terms: [
                 'Greed Terms:',
                 'Any energy.',
                 'Payment: 1 Xanax.',
-                'Coverage: 2 Feathery Hotel Coupon.',
+                'Payout: 1 Feathery Hotel Coupon.',
                 'Window: 30 mins.',
                 'Only available when War Stack is activated.'
             ].join('\n')
@@ -330,7 +330,7 @@
         if (name === 'Pride') {
             return [
                 'Pride Terms:',
-                'Coverage: 6 Xanax.',
+                'Payout: 6 Xanax.',
                 'Payment: 2 Xanax.',
                 'Window: 30 mins.',
                 p.rule
