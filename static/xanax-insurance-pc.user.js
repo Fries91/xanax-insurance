@@ -66,6 +66,8 @@
     var factionIdLock = gv('si_faction_id_lock', '49384');
     var authMode = gv('si_auth_mode', 'local');
     var settingsNotice = gv('si_settings_notice', 'Waiting for API key save or login.');
+    var autoLoginTriedAt = gv('si_auto_login_tried_at', '');
+    var autoLoginBusy = false;
     var xanaxRequestTotalOwed = Number(gv('si_xr_total_owed', 0) || 0);
     var xanaxRequestRequested = !!gv('si_xr_requested', 0);
     var xanaxRequestRequestedAt = gv('si_xr_requested_at', '');
@@ -211,6 +213,7 @@
         sv('si_faction_id_lock', factionIdLock || '');
         sv('si_auth_mode', authMode || 'local');
         sv('si_settings_notice', settingsNotice || '');
+        sv('si_auto_login_tried_at', autoLoginTriedAt || '');
         sv('si_xr_total_owed', xanaxRequestTotalOwed || 0);
         sv('si_xr_requested', xanaxRequestRequested ? 1 : 0);
         sv('si_xr_requested_at', xanaxRequestRequestedAt || '');
@@ -491,6 +494,7 @@
         });
         saveSession();
         renderOverlay();
+        maybeAutoLogin(false);
         pushActivation('member_request', {
             id: activationId,
             plan: name,
@@ -1184,6 +1188,72 @@
         });
     }
 
+    function finishLoginSuccess(user, roleLabel) {
+        sessionRole = (user && user.role) ? user.role : (roleLabel || 'member');
+        sessionName = (user && user.name) ? user.name : 'Member';
+        authMode = 'backend';
+        backendStatus = roleLabel === 'admin' ? 'Admin login ok' : 'Member login ok';
+        settingsNotice = 'Login successful. Signed in as ' + sessionName + '.';
+        lastSyncAt = new Date().toLocaleString();
+        autoLoginTriedAt = new Date().toISOString();
+        saveSession();
+        renderOverlay();
+        if (typeof touchScriptUsage === 'function') touchScriptUsage();
+        if (typeof fetchWarTabState === 'function') fetchWarTabState();
+        if (typeof fetchFinancialSummary === 'function') fetchFinancialSummary();
+        if (typeof fetchXanaxRequestState === 'function') fetchXanaxRequestState();
+        if (typeof fetchAlertsState === 'function') fetchAlertsState();
+        if (typeof fetchActivations === 'function') fetchActivations();
+        if (typeof syncClaimsFromBackend === 'function') syncClaimsFromBackend();
+    }
+
+    function tryBackendLoginSilently() {
+        if (!singleApiKey || autoLoginBusy) return Promise.resolve(false);
+        autoLoginBusy = true;
+
+        return apiRequest('POST', '/api/auth/admin-key-login', {
+            secret: syncSecret,
+            api_key: singleApiKey
+        }).then(function (data) {
+            if (data && data.ok && data.user) {
+                finishLoginSuccess(data.user, 'admin');
+                autoLoginBusy = false;
+                return true;
+            }
+            return apiRequest('POST', '/api/auth/faction-login', {
+                secret: syncSecret,
+                api_key: singleApiKey,
+                faction_id: factionIdLock
+            }).then(function (memberData) {
+                if (memberData && memberData.ok && memberData.user) {
+                    finishLoginSuccess(memberData.user, 'member');
+                    autoLoginBusy = false;
+                    return true;
+                }
+                autoLoginBusy = false;
+                return false;
+            });
+        }).catch(function () {
+            autoLoginBusy = false;
+            return false;
+        });
+    }
+
+    function maybeAutoLogin(force) {
+        if (!singleApiKey) return Promise.resolve(false);
+        if (sessionRole !== 'guest' && !force) return Promise.resolve(true);
+
+        var now = Date.now();
+        var lastTry = Date.parse(String(autoLoginTriedAt || '')) || 0;
+        if (!force && lastTry && (now - lastTry) < 15000) {
+            return Promise.resolve(false);
+        }
+
+        autoLoginTriedAt = new Date().toISOString();
+        saveSession();
+        return tryBackendLoginSilently();
+    }
+
     function singleBackendLogin() {
         if (!apiBase || !syncSecret || !singleApiKey) {
             window.alert('Enter your Torn API key first.');
@@ -1706,6 +1776,7 @@
             settingsNotice = singleApiKey ? 'API key saved successfully.' : 'No API key saved yet.';
             saveSession();
             renderOverlay();
+            maybeAutoLogin(true);
         });
 
         var applyFiltersBtn = overlay.querySelector('#si-apply-filters');
@@ -1718,7 +1789,7 @@
         if (pullBtn) pullBtn.addEventListener('click', syncClaimsFromBackend);
 
         var singleLoginBtn = overlay.querySelector('#si-single-login');
-        if (singleLoginBtn) singleLoginBtn.addEventListener('click', singleBackendLogin);
+        if (singleLoginBtn) singleLoginBtn.addEventListener('click', function () { maybeAutoLogin(true).then(function (ok) { if (!ok) singleBackendLogin(); }); });
 
         var warOnBtn = overlay.querySelector('#si-war-on');
         if (warOnBtn) warOnBtn.addEventListener('click', function () { setWarTabState(true); });
@@ -1972,6 +2043,7 @@
     function boot() {
         ensureMounted();
         ensureCoverageTimer();
+        maybeAutoLogin(false);
         fetchXanaxRequestState();
         fetchAlertsState();
         fetchActivations();
