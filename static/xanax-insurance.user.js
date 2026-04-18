@@ -110,7 +110,6 @@
             stackType: 'any',
             rule: 'Can start with any amount of energy.',
             oldRows: [
-                ['Coverage', '6 Xanax'],
                 ['Payment', '2 Xanax'],
                 ['Window', '30 mins'],
                 ['Payout', '6 Xanax']
@@ -125,7 +124,6 @@
             stackType: 'mixed',
             rule: 'Use for approved Envy claims only.',
             oldRows: [
-                ['Coverage', '25 Xanax + 3 E-DVD'],
                 ['Payment', '5 Xanax'],
                 ['Window', '30 mins'],
                 ['Payout', '10 Xanax + 2 E-DVD']
@@ -146,7 +144,6 @@
                 { stage: 'Stage 4', coverage: '20 Xanax', payment: '2 Xanax', payout: '8 Xanax', terms: 'Start at 750 energy', window: '30 mins' }
             ],
             oldRows: [
-                ['Coverage', 'Stage based'],
                 ['Payment', '2 Xanax each stage'],
                 ['Window', '30 mins each stage'],
                 ['Payout', '4 / 5 / 6 / 8 Xanax']
@@ -1621,7 +1618,7 @@
                     + p.stages.map(function (s) {
                         return '<div class="si-wrath-stage">'
                             + '<div class="si-wrath-title">' + esc(s.stage) + '</div>'
-                            + '<div class="si-row"><span class="si-label">Coverage</span><span>' + esc(s.coverage) + '</span></div>'
+                            + '<div class="si-row"><span class="si-label">Payout</span><span>' + esc(s.payout) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Payment</span><span>' + esc(s.payment) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Terms</span><span>' + esc(s.terms) + '</span></div>'
                             + '<div class="si-row"><span class="si-label">Window</span><span>' + esc(s.window) + '</span></div>'
